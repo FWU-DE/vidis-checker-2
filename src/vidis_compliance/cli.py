@@ -6,6 +6,7 @@ import typer
 from .models import JobConfig, JobResult, CheckFinding, CriteriaIndex, VidisCriterion
 from .checks.site.cookies import classify_cookies, classify_tracking_pixel, classify_local_storage
 from .sources.site.crawl import crawl
+from .sources.code.inspect import inspect_code_path
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 import yaml
@@ -40,6 +41,7 @@ def check(
 
     findings = []
     raw_capture = None
+    code_capture = None
     # Browser capture for cookie/storage-related VIDIS criteria.
     if url:
         cap = crawl(url, pages=pages, headless=True)
@@ -59,6 +61,12 @@ def check(
         s3, n3 = classify_local_storage(page_signals, audience)
         findings.append(CheckFinding(criterion="RDS-CUC-374", status=s3, note=n3))
         findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note="Datenschutzerklärung vs. Cookies abgleichen"))
+    if code_path:
+        code_findings, code_capture = inspect_code_path(code_path, audience)
+        by_criterion = {finding.criterion: finding for finding in findings}
+        for finding in code_findings:
+            by_criterion[finding.criterion] = finding
+        findings = list(by_criterion.values())
     wired = {f.criterion for f in findings}
     for k in crit.items.keys():
         if k not in wired:
@@ -70,6 +78,8 @@ def check(
     (outdir / "result.json").write_text(res.model_dump_json(indent=2), encoding="utf-8")
     if raw_capture is not None:
         (outdir / "capture.json").write_text(json.dumps(raw_capture, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    if code_capture is not None:
+        (outdir / "code_capture.json").write_text(json.dumps(code_capture, ensure_ascii=False, indent=2), encoding="utf-8")
     if output_pdf:
         pdf_path = Path(output_pdf)
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
