@@ -19,10 +19,10 @@ Quick start
 - Python 3.12+
 - uv (recommended): https://docs.astral.sh/uv/
 
-Commands (planned)
-- vidis check --url https://example.com [--login USER:PASS] [--pages 10]
+Commands
+- vidis check --url https://example.com [--pages 10] [--pdf out/report.pdf] [--md out/report.md]
 - vidis check-code --path /path/to/repo
-- vidis report --input job_id --pdf out/report.pdf
+- vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
 - vidis serve  # FastAPI
 
 Structure

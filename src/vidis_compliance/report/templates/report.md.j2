@@ -1,0 +1,51 @@
+# {{ document.title }}
+
+- Job: `{{ document.result.job_id }}`
+- Erstellt: `{{ document.generated_at }}`
+- Kriterien: {{ document.criteria_reports | length }}
+
+## Zusammenfassung
+
+| Status | Anzahl |
+| --- | ---: |
+{% for status in ["PASS", "FAIL", "MANUELL"] -%}
+| {{ status }} | {{ counts.get(status, 0) }} |
+{% endfor %}
+
+## Kriterienbewertung
+
+{% for report in document.criteria_reports -%}
+### {{ report.criterion.code }}: {{ report.criterion.name }}
+
+- Bereich: {{ report.criterion.area }}
+- Verbindlichkeit: {{ "MUSS" if report.criterion.must else "SOLL" }}
+- Status: **{{ report.finding.status }}**
+{% if report.criterion.description.strip() %}
+
+**Kriteriumstext**
+
+{{ report.criterion.description.strip() }}
+{% endif %}
+
+**Bewertungstext**
+
+{{ report.text }}
+
+**Nachweise**
+
+| Nachweis | Wert |
+| --- | --- |
+{% for item in report.evidence -%}
+| {{ item.label | table_escape }} | {{ item.value | table_escape }} |
+{% endfor %}
+
+{% endfor -%}
+## Anhang: Rohdaten der Erfassung
+
+{% if raw_capture_json -%}
+```json
+{{ raw_capture_json }}
+```
+{% else -%}
+Keine Rohdaten übergeben.
+{% endif %}
