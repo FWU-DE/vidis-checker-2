@@ -1,0 +1,9 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+tmp/
+results/
+.DS_Store

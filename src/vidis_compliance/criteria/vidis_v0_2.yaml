@@ -1,0 +1,60 @@
+RDS-CDN-379:
+  name: CDN nur zur Bereitstellung von Inhalten
+  area: RDS
+  must: true
+  description: |
+    Es wird kein CDN genutzt, das nicht ausschließlich der reinen Bereitstellung von Inhalten dient.
+    Darüber hinaus erfüllt das CDN die Voraussetzungen des Prüfunterbereichs Dienstleister.
+RDS-CUC-371:
+  name: Nicht essenzielle Cookies
+  area: RDS
+  must: true
+  description: |
+    Es werden keine Cookies gesetzt, die für den Betrieb der Webseite nicht erforderlich sind, sofern sich diese an die Nutzergruppe der Schülerinnen und Schüler richten.
+    Richtet sich das Angebot an Lehrkräfte, wird dafür eine entsprechende Einwilligung eingeholt.
+RDS-CUC-372:
+  name: Cookies allgemein
+  area: RDS
+  must: true
+  description: |
+    Es werden keine Cookies gesetzt, für die eine Einwilligung erforderlich ist, sofern sich das Angebot an die Nutzergruppe der Schülerinnen und Schüler richtet.
+    Richtet sich das Angebot an Lehrkräfte, kann die Einwilligung eingeholt werden.
+RDS-CUC-373:
+  name: Trackingpixel
+  area: RDS
+  must: true
+  description: |
+    Es werden keine Trackingpixel verwendet, wenn sich ein Angebot an Schülerinnen und Schüler richtet.
+    Richtet sich das Angebot an Lehrkräfte, wird dafür eine entsprechende Einwilligung eingeholt.
+RDS-CUC-374:
+  name: Local Browser Storage
+  area: RDS
+  must: true
+  description: |
+    Es werden keine Daten im Local Browser Storage oder Session Storage abgelegt, sofern dafür eine Einwilligung erforderlich ist und sich das Angebot an die Nutzergruppe der Schülerinnen und Schüler richtet.
+    Richtet sich das Angebot an Lehrkräfte, darf die Einwilligung eingeholt werden.
+    Dies schützt die Privatsphäre der Schülerinnen und Schüler und gewährleistet die Einhaltung datenschutzrechtlicher Anforderungen.
+RDS-CUC-453:
+  name: Beschreibung aller Cookies
+  area: RDS
+  must: true
+  description: |
+    Der Anbieter beschreibt alle "Cookies" seines Angebots und deren Zwecke in der Datenschutzerklärung.
+ITS-ENC-359:
+  name: Website nur über HTTPS
+  area: ITS
+  must: true
+  description: |
+    Seiten des Angebots sind ausschließlich über https abrufbar.
+ITS-ENC-360:
+  name: HTTP → HTTPS Redirect
+  area: ITS
+  must: true
+  description: |
+    Es sind Umleitungen von http auf https konfiguriert.
+ITS-ENC-361:
+  name: Ablehnen veralteter TLS/SSL
+  area: ITS
+  must: true
+  description: |
+    Veraltete TLS/SSL-Protokolle (SSLv2, SSLv3, TLS 1.0, TLS 1.1) werden abgelehnt.
