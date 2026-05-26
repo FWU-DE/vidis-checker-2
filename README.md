@@ -41,4 +41,4 @@ Structure
   - VIDIS_SKILL.md                      # Imported skill reference for operators
 
 License
-- TBD with FWU (MIT/Apache-2 recommended).
+- MIT (see LICENSE).
