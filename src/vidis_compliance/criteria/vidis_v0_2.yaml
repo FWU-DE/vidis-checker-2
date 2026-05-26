@@ -3,58 +3,148 @@ RDS-CDN-379:
   area: RDS
   must: true
   description: |
-    Es wird kein CDN genutzt, das nicht ausschließlich der reinen Bereitstellung von Inhalten dient.
-    Darüber hinaus erfüllt das CDN die Voraussetzungen des Prüfunterbereichs Dienstleister.
+    
 RDS-CUC-371:
   name: Nicht essenzielle Cookies
   area: RDS
   must: true
   description: |
-    Es werden keine Cookies gesetzt, die für den Betrieb der Webseite nicht erforderlich sind, sofern sich diese an die Nutzergruppe der Schülerinnen und Schüler richten.
-    Richtet sich das Angebot an Lehrkräfte, wird dafür eine entsprechende Einwilligung eingeholt.
+    
 RDS-CUC-372:
   name: Cookies allgemein
   area: RDS
   must: true
   description: |
-    Es werden keine Cookies gesetzt, für die eine Einwilligung erforderlich ist, sofern sich das Angebot an die Nutzergruppe der Schülerinnen und Schüler richtet.
-    Richtet sich das Angebot an Lehrkräfte, kann die Einwilligung eingeholt werden.
+    
 RDS-CUC-373:
   name: Trackingpixel
   area: RDS
   must: true
   description: |
-    Es werden keine Trackingpixel verwendet, wenn sich ein Angebot an Schülerinnen und Schüler richtet.
-    Richtet sich das Angebot an Lehrkräfte, wird dafür eine entsprechende Einwilligung eingeholt.
+    
 RDS-CUC-374:
   name: Local Browser Storage
   area: RDS
   must: true
   description: |
-    Es werden keine Daten im Local Browser Storage oder Session Storage abgelegt, sofern dafür eine Einwilligung erforderlich ist und sich das Angebot an die Nutzergruppe der Schülerinnen und Schüler richtet.
-    Richtet sich das Angebot an Lehrkräfte, darf die Einwilligung eingeholt werden.
-    Dies schützt die Privatsphäre der Schülerinnen und Schüler und gewährleistet die Einhaltung datenschutzrechtlicher Anforderungen.
+    
+RDS-CUC-375:
+  name: Informationen auf der Endeinrichtung des Endnutzers
+  area: RDS
+  must: true
+  description: |
+    
+RDS-CUC-376:
+  name: Browserfingerprints
+  area: RDS
+  must: true
+  description: |
+    
+RDS-CUC-377:
+  name: Trackingmechanismen zu nicht pädagogischen Zwecken
+  area: RDS
+  must: true
+  description: |
+    
 RDS-CUC-453:
   name: Beschreibung aller Cookies
   area: RDS
   must: true
   description: |
-    Der Anbieter beschreibt alle "Cookies" seines Angebots und deren Zwecke in der Datenschutzerklärung.
+    
+RDS-DEV-380:
+  name: Datenerhebung und -verarbeitung
+  area: RDS
+  must: true
+  description: |
+    
+RDS-DEV-381:
+  name: Umgang mit Daten nach Beendigung der Zusammenarbeit
+  area: RDS
+  must: true
+  description: |
+    
+RDS-DEV-466:
+  name: Sichere Datenverarbeitung
+  area: RDS
+  must: true
+  description: |
+    
+RDS-DSO-383:
+  name: Benennung eines Datenschutzbeauftragten
+  area: RDS
+  must: true
+  description: |
+    
+RDS-IPF-364:
+  name: Leicht auffindbares Impressum
+  area: RDS
+  must: true
+  description: |
+    
+RDS-IPF-365:
+  name: Leicht auffindbare Datenschutzerklärung
+  area: RDS
+  must: true
+  description: |
+    
+RDS-IPF-366:
+  name: Vollständiges Impressum
+  area: RDS
+  must: true
+  description: |
+    
+RDS-IPF-367:
+  name: Vollständige Datenschutzerklärung
+  area: RDS
+  must: true
+  description: |
+    
+RDS-AGB-368:
+  name: Nutzungsbedingungen/AGB: Datenschutzkonform
+  area: RDS
+  must: true
+  description: |
+    
+RDS-AGB-369:
+  name: Nutzungsbedingungen/AGB: AVV-konform
+  area: RDS
+  must: true
+  description: |
+    
+RDS-VIN-354:
+  name: Jugendmedienschutz
+  area: RDS
+  must: true
+  description: |
+    
+RDS-WER-384:
+  name: Werbefreiheit
+  area: RDS
+  must: true
+  description: |
+    
+RDS-WER-385:
+  name: Verweise auf Werbeinhalte
+  area: RDS
+  must: true
+  description: |
+    
 ITS-ENC-359:
-  name: Website nur über HTTPS
+  name: Website nur über https:// aufrufbar
   area: ITS
   must: true
   description: |
-    Seiten des Angebots sind ausschließlich über https abrufbar.
+    
 ITS-ENC-360:
-  name: HTTP → HTTPS Redirect
+  name: Es sind Umleitungen von http auf https konfiguriert.
   area: ITS
   must: true
   description: |
-    Es sind Umleitungen von http auf https konfiguriert.
+    
 ITS-ENC-361:
-  name: Ablehnen veralteter TLS/SSL
+  name: Ablehnen veralteter TLS/SSL-Protokolle
   area: ITS
   must: true
   description: |
-    Veraltete TLS/SSL-Protokolle (SSLv2, SSLv3, TLS 1.0, TLS 1.1) werden abgelehnt.
+    
