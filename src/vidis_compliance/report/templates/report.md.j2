@@ -18,6 +18,18 @@
 | {{ status }} | {{ counts.get(status, 0) }} |
 {% endfor %}
 
+{% if document.cookie_storage_evidence -%}
+## Gemeinsame Cookie- und Browser-Storage-Bewertung
+
+Diese Übersicht fasst Cookies, `localStorage` und `sessionStorage` für die betroffenen CUC-Kriterien zusammen. Storage-Werte werden nicht ausgegeben.
+
+| Nachweis | Wert |
+| --- | --- |
+{% for item in document.cookie_storage_evidence -%}
+| {{ item.label | table_escape }} | {{ item.value | table_escape }} |
+{% endfor %}
+
+{% endif -%}
 ## Kriterienbewertung
 
 {% for report in document.criteria_reports -%}
