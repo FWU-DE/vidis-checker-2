@@ -304,15 +304,22 @@ uv run pytest -q</code></pre>
   -d '{"target_url":"https://example.com","pages":8}'</code></pre>
         </div>
       </div>
-      <h3>Job pollieren und Report erzeugen</h3>
-      <pre><code>curl http://127.0.0.1:8645/jobs/&lt;job_id&gt;
+      <h3>Job pollieren, Jobs listen und Report erzeugen</h3>
+      <pre><code># Optional absichern: export VIDIS_API_KEY='change-me'
+# Dann Authorization-Header mit dem konfigurierten Bearer-Token ergänzen
+
+curl 'http://127.0.0.1:8645/jobs?status=completed&amp;limit=100&amp;offset=0'
+
+curl http://127.0.0.1:8645/jobs/&lt;job_id&gt;
 
 curl -X POST http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports \
   -H 'Content-Type: application/json' \
   -d '{"format":"pdf"}'
 
-curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf</code></pre>
-      <p>Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden.</p>
+curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf
+curl -o vidis-evidence.zip http://127.0.0.1:8645/jobs/&lt;job_id&gt;/archive.zip</code></pre>
+      <p>Ohne <code>VIDIS_API_KEY</code> ist die API für lokale Entwicklung offen. Sobald <code>VIDIS_API_KEY</code> oder das alte <code>API_KEY</code> gesetzt ist, müssen alle Endpoints einen gültigen Bearer-Token senden.</p>
+      <p><code>GET /jobs</code> liefert eine begrenzte Übersicht persistierter Jobs mit optionalem <code>status</code>-Filter sowie <code>limit</code>/<code>offset</code>, ohne vollständige Ergebnisdaten einzubetten. Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden. Das ZIP-Archiv enthält nur erlaubte Dateien und Reports; beliebige Zusatzdateien oder Secrets im Job-Ordner werden nicht exportiert.</p>
     </section>
 
     <section id="outputs">

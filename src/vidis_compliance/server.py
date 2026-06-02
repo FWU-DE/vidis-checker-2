@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import threading
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Literal, cast
 
-from fastapi import FastAPI, HTTPException, Response, status
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from . import cli as cli_module
@@ -60,6 +63,24 @@ class JobMetadata(BaseModel):
     reports: dict[str, str] = Field(default_factory=dict)
 
 
+class JobSummary(BaseModel):
+    id: str
+    status: JobStatus
+    created_at: str
+    updated_at: str
+    request: JobCreateRequest
+    error: str | None = None
+    artifacts: dict[str, str] = Field(default_factory=dict)
+    reports: dict[str, str] = Field(default_factory=dict)
+
+
+class JobListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[JobSummary]
+
+
 class ReportCreateRequest(BaseModel):
     format: Literal["md", "pdf"]
 
@@ -68,6 +89,21 @@ class ReportCreatedResponse(BaseModel):
     job_id: str
     format: Literal["md", "pdf"]
     download_url: str
+
+
+@app.middleware("http")
+async def require_bearer_auth(request: Request, call_next):
+    api_key = _api_key()
+    if api_key:
+        expected = f"Bearer {api_key}"
+        supplied = request.headers.get("authorization", "")
+        if not hmac.compare_digest(supplied, expected):
+            return JSONResponse(
+                {"detail": "Unauthorized"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    return await call_next(request)
 
 
 @app.get("/health")
@@ -95,6 +131,22 @@ def create_job(request: JobCreateRequest) -> JobCreatedResponse:
     _write_metadata(metadata)
     _JOB_EXECUTOR.submit(_run_job, job_id)
     return JobCreatedResponse(id=job_id, status=metadata.status, status_url=f"/jobs/{job_id}")
+
+
+@app.get("/jobs", response_model=JobListResponse)
+def list_jobs(
+    status_filter: JobStatus | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> JobListResponse:
+    jobs = _list_metadata(status_filter=status_filter)
+    page = jobs[offset : offset + limit]
+    return JobListResponse(
+        total=len(jobs),
+        limit=limit,
+        offset=offset,
+        items=[_job_summary(job) for job in page],
+    )
 
 
 @app.get("/jobs/{job_id}", response_model=JobMetadata)
@@ -143,6 +195,27 @@ def get_report(job_id: str, report_name: str):
     if report_name.endswith(".md"):
         return Response(path.read_text(encoding="utf-8"), media_type=media_type)
     return FileResponse(path, media_type=media_type, filename=report_name)
+
+
+@app.get("/jobs/{job_id}/archive.zip")
+def get_archive(job_id: str):
+    metadata = _read_metadata(job_id)
+    job_dir = _job_dir(job_id)
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name in sorted(ALLOWED_ARTIFACTS):
+            path = job_dir / name
+            if path.exists() and path.is_file():
+                archive.write(path, arcname=name)
+        for report_name in sorted(ALLOWED_REPORTS):
+            path = job_dir / report_name
+            if path.exists() and path.is_file():
+                archive.write(path, arcname=f"reports/{report_name}")
+    return Response(
+        buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="vidis-{metadata.id}.archive.zip"'},
+    )
 
 
 def _run_job(job_id: str) -> None:
@@ -235,6 +308,10 @@ def _results_root() -> Path:
     return Path(os.environ.get("VIDIS_RESULTS_DIR", "results")).resolve()
 
 
+def _api_key() -> str:
+    return os.environ.get("VIDIS_API_KEY") or os.environ.get("API_KEY", "")
+
+
 def _job_dir(job_id: str) -> Path:
     if not job_id or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for ch in job_id):
         raise HTTPException(status_code=404, detail="job not found")
@@ -261,6 +338,37 @@ def _write_metadata(metadata: JobMetadata) -> None:
         path = _metadata_path(metadata.id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
+
+
+def _list_metadata(status_filter: JobStatus | None = None) -> list[JobMetadata]:
+    root = _results_root()
+    if not root.exists():
+        return []
+    jobs: list[JobMetadata] = []
+    for path in root.iterdir():
+        metadata_path = path / "job.json"
+        if not path.is_dir() or not metadata_path.exists():
+            continue
+        try:
+            metadata = JobMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if status_filter is None or metadata.status == status_filter:
+            jobs.append(metadata)
+    return sorted(jobs, key=lambda job: (job.created_at, job.id), reverse=True)
+
+
+def _job_summary(metadata: JobMetadata) -> JobSummary:
+    return JobSummary(
+        id=metadata.id,
+        status=metadata.status,
+        created_at=metadata.created_at,
+        updated_at=metadata.updated_at,
+        request=metadata.request,
+        error=metadata.error,
+        artifacts=metadata.artifacts,
+        reports=metadata.reports,
+    )
 
 
 def _safe_named_file(job_id: str, name: str, allowed: set[str]) -> Path:

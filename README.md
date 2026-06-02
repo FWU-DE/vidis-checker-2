@@ -29,6 +29,15 @@ Commands
 - vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
 - vidis serve  # FastAPI
 
+API automation
+- `uv run vidis serve --host 127.0.0.1 --port 8645` starts the FastAPI server.
+- Local development is open by default. Set `VIDIS_API_KEY` (or legacy `API_KEY`) to require Bearer authentication on every endpoint.
+- `POST /jobs` starts an async check and returns a status URL.
+- `GET /jobs?status=completed&limit=100&offset=0` lists persisted jobs without embedding full result payloads.
+- `GET /jobs/<job_id>` returns job metadata, result, report links, and artifact links.
+- `POST /jobs/<job_id>/reports` creates `report.md` or `report.pdf` for completed jobs.
+- `GET /jobs/<job_id>/archive.zip` downloads the bounded evidence package (`job.json`, `result.json`, allowed captures, and reports) while excluding arbitrary files/secrets.
+
 Document checks
 - `--document PATH` can be repeated for local HTML, text/Markdown, or PDF files.
 - `--agb-url`, `--privacy-url`, and `--avv-url` fetch remote AGB, Datenschutz, and AVV documents.

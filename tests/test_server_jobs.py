@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import threading
 import time
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -103,7 +105,9 @@ def test_jobs_reject_missing_targets_and_path_traversal(tmp_path: Path, monkeypa
     missing = client.post("/jobs", json={"pages": 1})
     assert missing.status_code == 422
 
-    created = client.post("/jobs", json={"document_path": str(tmp_path / "doc.pdf")})
+    document = tmp_path / "doc.pdf"
+    document.write_text("fixture doc", encoding="utf-8")
+    created = client.post("/jobs", json={"document_path": str(document)})
     assert created.status_code == 202
     job_id = created.json()["id"]
     completed = _wait_for_completed(client, job_id)
@@ -121,3 +125,75 @@ def test_jobs_reject_missing_targets_and_path_traversal(tmp_path: Path, monkeypa
     metadata_path = tmp_path / "results" / job_id / "job.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["request"]["document_path"].endswith("doc.pdf")
+
+
+def test_api_requires_bearer_token_when_configured(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
+    monkeypatch.setenv("VIDIS_API_KEY", "secret-token")
+    client = TestClient(server.app)
+
+    missing = client.get("/criteria")
+    wrong = client.get("/criteria", headers={"Authorization": "Bearer wrong"})
+    allowed = client.get("/criteria", headers={"Authorization": "Bearer secret-token"})
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert allowed.status_code == 200
+
+
+def test_jobs_list_returns_persisted_jobs_with_status_filter_and_no_results(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
+    client = TestClient(server.app)
+
+    first_document = tmp_path / "one.pdf"
+    second_document = tmp_path / "two.pdf"
+    first_document.write_text("fixture one", encoding="utf-8")
+    second_document.write_text("fixture two", encoding="utf-8")
+    first = client.post("/jobs", json={"document_path": str(first_document)})
+    second = client.post("/jobs", json={"document_path": str(second_document)})
+    assert first.status_code == 202
+    assert second.status_code == 202
+    first_id = first.json()["id"]
+    second_id = second.json()["id"]
+    assert _wait_for_completed(client, first_id)["status"] == "completed"
+    assert _wait_for_completed(client, second_id)["status"] == "completed"
+
+    listed = client.get("/jobs", params={"status": "completed", "limit": 1, "offset": 0})
+
+    assert listed.status_code == 200
+    payload = listed.json()
+    assert payload["total"] == 2
+    assert payload["limit"] == 1
+    assert payload["offset"] == 0
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["id"] in {first_id, second_id}
+    assert payload["items"][0]["status"] == "completed"
+    assert "result" not in payload["items"][0]
+
+
+def test_archive_zip_contains_expected_files_and_excludes_unsafe_artifacts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
+    client = TestClient(server.app)
+
+    document = tmp_path / "doc.pdf"
+    document.write_text("fixture doc", encoding="utf-8")
+    created = client.post("/jobs", json={"document_path": str(document)})
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    assert _wait_for_completed(client, job_id)["status"] == "completed"
+    assert client.post(f"/jobs/{job_id}/reports", json={"format": "md"}).status_code == 201
+
+    job_dir = tmp_path / "results" / job_id
+    (job_dir / "secret.txt").write_text("do not export", encoding="utf-8")
+    (job_dir / "../escape.txt").write_text("escape", encoding="utf-8")
+
+    response = client.get(f"/jobs/{job_id}/archive.zip")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert {"job.json", "result.json", "reports/report.md"}.issubset(names)
+        assert "secret.txt" not in names
+        assert "../escape.txt" not in names
+        assert all(".." not in Path(name).parts for name in names)
