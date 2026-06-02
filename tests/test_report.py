@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 from vidis_compliance.models import CheckFinding, JobResult
 from vidis_compliance.report.markdown import generate_markdown
@@ -34,7 +35,7 @@ def test_generate_markdown_includes_criterion_text_evidence_and_raw_capture(tmp_
     assert '"cookies"' in text
 
 
-def test_generate_markdown_includes_ipf_evidence_urls(tmp_path: Path) -> None:
+def test_generate_markdown_includes_ipf_evidence_urls_and_semantic_disclaimer(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",
         findings=[
@@ -60,6 +61,30 @@ def test_generate_markdown_includes_ipf_evidence_urls(tmp_path: Path) -> None:
     text = output.read_text(encoding="utf-8")
     assert "| Impressum-URL | https://example.test/impressum |" in text
     assert "| Besuchte IPF-URLs | https://example.test/, https://example.test/impressum |" in text
+    assert "## Hinweis zu inhaltlichen Bewertungen" in text
+    assert "KI-gestützte erste Einschätzung" in text
+    assert "ersetzt keine rechtliche oder datenschutzfachliche Prüfung" in text
+
+
+def test_generate_pdf_includes_semantic_disclaimer_for_ipf_evaluation(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[
+            CheckFinding(
+                criterion="RDS-IPF-367",
+                status="MANUELL",
+                note="Datenschutzerklärung enthält unklare Angaben zu Speicherdauer.",
+            )
+        ],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(result, output, raw_capture={"url": "https://example.test", "ipf": {"privacy_url": "https://example.test/datenschutz"}})
+
+    assert output.stat().st_size > 1000
+    extracted = subprocess.run(["pdftotext", str(output), "-"], check=True, text=True, capture_output=True).stdout
+    assert "KI-gestuetzte erste Einschaetzung" in extracted
+    assert "ersetzt keine rechtliche oder datenschutzfachliche Pruefung" in extracted
 
 
 def test_generate_markdown_lists_browser_signal_evidence_without_storage_values(tmp_path: Path) -> None:

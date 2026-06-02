@@ -130,6 +130,7 @@ def _styles():
     styles.add(ParagraphStyle("CriterionTitle", parent=styles["Heading2"], fontSize=11.5, leading=14, spaceBefore=8, spaceAfter=3, textColor=colors.HexColor("#111827")))
     styles.add(ParagraphStyle("MiniHeading", parent=styles["Heading3"], fontSize=9.2, leading=11, spaceBefore=4, spaceAfter=2, textColor=colors.HexColor("#374151")))
     styles.add(ParagraphStyle("SmallMuted", parent=styles["Normal"], fontSize=8.2, leading=10.5, textColor=colors.HexColor("#6b7280")))
+    styles.add(ParagraphStyle("Disclaimer", parent=styles["Normal"], fontSize=8.4, leading=11, textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fffbeb"), borderColor=colors.HexColor("#f59e0b"), borderWidth=0.25, borderPadding=5, spaceAfter=4))
     styles.add(ParagraphStyle("KpiNumber", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=20, leading=23, alignment=TA_LEFT))
     styles.add(ParagraphStyle("KpiLabel", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.HexColor("#6b7280")))
     styles.add(ParagraphStyle("CodeBlock", parent=styles["Code"], fontName="Courier", fontSize=6.5, leading=8, backColor=colors.HexColor("#f8fafc"), borderColor=colors.HexColor("#e5e7eb"), borderWidth=0.25, borderPadding=4))
@@ -149,8 +150,17 @@ def _cover(document: ReportDocument, counts: dict[str, int], styles) -> list:
             "Screenshots werden im Anhang eingebettet, sofern der Lauf Bildnachweise erzeugt hat.",
             styles["BodyText"],
         ),
-        Spacer(1, 0.35 * cm),
+        Spacer(1, 0.2 * cm),
     ]
+    if document.semantic_disclaimer:
+        flow.extend(
+            [
+                Paragraph("Hinweis zu inhaltlichen Bewertungen", styles["MiniHeading"]),
+                Paragraph(_xml_escape(_ascii_pdf_text(document.semantic_disclaimer)), styles["Disclaimer"]),
+                Spacer(1, 0.25 * cm),
+            ]
+        )
+    flow.append(Spacer(1, 0.15 * cm))
     url = (document.raw_capture or {}).get("url") if document.raw_capture else None
     if url:
         flow.append(Paragraph(f"Geprüfte Start-URL: {_xml_escape(str(url))}", styles["SmallMuted"]))
@@ -333,6 +343,19 @@ def _small_bold() -> ParagraphStyle:
 
 def _xml_escape(value: str) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _ascii_pdf_text(value: str) -> str:
+    return (
+        str(value)
+        .replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("Ä", "Ae")
+        .replace("Ö", "Oe")
+        .replace("Ü", "Ue")
+        .replace("ß", "ss")
+    )
 
 
 def _compact_text(value: str, limit: int) -> str:

@@ -13,6 +13,14 @@ from ..models import CheckFinding, CriteriaIndex, JobResult, VidisCriterion
 
 HERE = Path(__file__).resolve().parents[1]
 CRITERIA_PATH = HERE / "criteria" / "vidis_v0_2.yaml"
+SEMANTIC_EVALUATION_DISCLAIMER = (
+    "Dieser Report enthält bei Impressum, Datenschutzerklärung, AGB/AVV, "
+    "Werbung, Jugendmedienschutz und vergleichbaren inhaltlichen Bewertungen "
+    "eine KI-gestützte erste Einschätzung. Sie ersetzt keine rechtliche oder "
+    "datenschutzfachliche Prüfung durch qualifizierte Personen."
+)
+SEMANTIC_EVALUATION_PREFIXES = ("RDS-IPF-", "RDS-AGB-", "RDS-WER-", "RDS-VIN-")
+SEMANTIC_EVALUATION_CODES = {"RDS-DSO-383", "RDS-DEV-380", "RDS-DEV-466", "RDS-SPE-370", "RDS-CUC-453"}
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,12 @@ class ReportDocument:
     raw_capture: dict[str, Any] | None
     generated_at: str
     title: str = "VIDIS Prüfkriterien V0.2 — Automatisierter Vorab-Check"
+
+    @property
+    def semantic_disclaimer(self) -> str:
+        if any(_is_semantic_evaluation(report.criterion.code) for report in self.criteria_reports):
+            return SEMANTIC_EVALUATION_DISCLAIMER
+        return ""
 
 
 def load_criteria(path: Path = CRITERIA_PATH) -> CriteriaIndex:
@@ -114,6 +128,10 @@ def _normalize_report_finding(finding: CheckFinding) -> CheckFinding:
             note="Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet.",
         )
     return finding
+
+
+def _is_semantic_evaluation(code: str) -> bool:
+    return code in SEMANTIC_EVALUATION_CODES or code.startswith(SEMANTIC_EVALUATION_PREFIXES)
 
 
 def _status_german(status: str) -> str:
