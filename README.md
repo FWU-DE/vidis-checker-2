@@ -19,10 +19,13 @@ Quick start
 - Python 3.12+
 - uv (recommended): https://docs.astral.sh/uv/
 
+Manual
+- Open `docs/manual.html` in a browser for the full usage guide.
+
 Commands
-- vidis check --url https://example.com [--pages 10] [--pdf out/report.pdf] [--md out/report.md]
+- vidis check --url https://example.com [--pages 8] [--pdf out/report.pdf] [--md out/report.md]
 - vidis check --document agb.html --document avv.pdf [--privacy-url https://example.com/datenschutz] [--agb-url https://example.com/agb] [--avv-url https://example.com/avv]
-- vidis check-code --path /path/to/repo
+- vidis check --code-path /path/to/repo
 - vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
 - vidis serve  # FastAPI
 

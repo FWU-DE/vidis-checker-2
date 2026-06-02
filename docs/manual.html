@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VIDIS Compliance Tool – Bedienungsanleitung</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f172a;
+      --panel: rgba(15, 23, 42, 0.78);
+      --panel-2: rgba(30, 41, 59, 0.72);
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --line: rgba(148, 163, 184, 0.28);
+      --accent: #38bdf8;
+      --accent-2: #a78bfa;
+      --ok: #34d399;
+      --warn: #f59e0b;
+      --bad: #fb7185;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(56, 189, 248, 0.18), transparent 28rem),
+        radial-gradient(circle at 85% 0%, rgba(167, 139, 250, 0.16), transparent 26rem),
+        linear-gradient(135deg, #020617 0%, #0f172a 55%, #111827 100%);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    header {
+      padding: 56px 24px 32px;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-size: clamp(2.1rem, 5vw, 4.8rem);
+      line-height: 0.98;
+      margin: 0 0 18px;
+      max-width: 860px;
+    }
+    .lead {
+      color: var(--muted);
+      font-size: 1.18rem;
+      max-width: 780px;
+      margin: 0;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(18px);
+      background: rgba(2, 6, 23, 0.72);
+      border-block: 1px solid var(--line);
+    }
+    nav .inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 10px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    nav a {
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.12);
+    }
+    nav a:hover { background: rgba(56, 189, 248, 0.18); }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 28px 24px 64px;
+      display: grid;
+      gap: 20px;
+    }
+    section, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+    }
+    section { padding: 24px; }
+    h2 { margin: 0 0 14px; font-size: 1.55rem; }
+    h3 { margin: 24px 0 10px; font-size: 1.1rem; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 8px 0 0; padding-left: 1.25rem; }
+    li { margin: 6px 0; }
+    code, pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+    code {
+      background: rgba(148, 163, 184, 0.16);
+      padding: 0.12rem 0.32rem;
+      border-radius: 6px;
+    }
+    pre {
+      overflow: auto;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.74);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      color: #dbeafe;
+      margin: 10px 0 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .card { padding: 16px; background: var(--panel-2); }
+    .card h3 { margin-top: 0; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #7dd3fc;
+      margin-bottom: 10px;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    .status {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .pass { color: var(--ok); }
+    .manual { color: var(--warn); }
+    .fail { color: var(--bad); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 14px;
+      margin-top: 10px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--accent); font-size: 0.86rem; }
+    .note {
+      border-left: 4px solid var(--accent);
+      padding: 10px 12px;
+      background: rgba(56, 189, 248, 0.10);
+      border-radius: 10px;
+      color: #dbeafe;
+    }
+    footer {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 24px 40px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8fafc;
+        --panel: rgba(255, 255, 255, 0.82);
+        --panel-2: rgba(255, 255, 255, 0.72);
+        --text: #0f172a;
+        --muted: #475569;
+        --line: rgba(15, 23, 42, 0.14);
+      }
+      body { background: linear-gradient(135deg, #f8fafc, #e0f2fe 60%, #ede9fe); }
+      nav { background: rgba(255, 255, 255, 0.76); }
+      pre { background: #0f172a; color: #e5e7eb; }
+      .note { color: #0f172a; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">VIDIS Compliance Suite</div>
+    <h1>Bedienungsanleitung für Prüfungen, Reports und API-Jobs</h1>
+    <p class="lead">Dieses Manual beschreibt den lokalen Einsatz des VIDIS Compliance Tools: Website-/Browser-Signale prüfen, Quellcode inspizieren, Dokumente auswerten, PDF/Markdown-Reports erzeugen und die FastAPI-Schnittstelle nutzen.</p>
+  </header>
+
+  <nav aria-label="Inhalt">
+    <div class="inner">
+      <a href="#setup">Setup</a>
+      <a href="#cli">CLI</a>
+      <a href="#reports">Reports</a>
+      <a href="#api">FastAPI</a>
+      <a href="#outputs">Outputs</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+    </div>
+  </nav>
+
+  <main>
+    <section id="setup">
+      <h2>1. Setup</h2>
+      <p>Voraussetzungen: Python 3.12+ und <code>uv</code>. Alle Befehle werden aus dem Repo-Root ausgeführt.</p>
+      <pre><code>cd /path/to/vidis-compliance
+uv sync
+uv run pytest -q</code></pre>
+      <p class="note">Für lokale Entwicklung im Jan-Setup liegt das Repo unter <code>/Users/janrenz/code/vidis-compliance</code>. Das Tool schreibt Ergebnisse standardmäßig nach <code>results/&lt;job_id&gt;/</code>.</p>
+    </section>
+
+    <section id="cli">
+      <h2>2. Lokale CLI-Prüfung</h2>
+      <p>Der zentrale Befehl ist <code>vidis check</code>. Er kann Website-, Code- und Dokument-Signale kombinieren.</p>
+      <h3>Website prüfen</h3>
+      <pre><code>uv run vidis check \
+  --url https://example.com \
+  --pages 8 \
+  --audience beide \
+  --output example-site \
+  --md results/example-site/report.md \
+  --pdf results/example-site/report.pdf</code></pre>
+      <h3>Quellcode prüfen</h3>
+      <pre><code>uv run vidis check \
+  --code-path /path/to/vendor/repo \
+  --output vendor-code \
+  --md results/vendor-code/report.md</code></pre>
+      <h3>Dokumente und URLs einbeziehen</h3>
+      <pre><code>uv run vidis check \
+  --url https://example.com \
+  --document ./docs/agb.pdf \
+  --document ./docs/avv.pdf \
+  --privacy-url https://example.com/datenschutz \
+  --agb-url https://example.com/agb \
+  --avv-url https://example.com/avv \
+  --output example-full \
+  --pdf results/example-full/report.pdf</code></pre>
+      <table>
+        <thead><tr><th>Option</th><th>Bedeutung</th></tr></thead>
+        <tbody>
+          <tr><td><code>--url</code></td><td>Start-URL für Browser-/Website-Prüfung.</td></tr>
+          <tr><td><code>--code-path</code></td><td>Lokales Repository oder Source-Verzeichnis für statische Checks.</td></tr>
+          <tr><td><code>--pages</code></td><td>Maximale Anzahl gecrawlter Seiten, default <code>8</code>.</td></tr>
+          <tr><td><code>--audience</code></td><td>Zielgruppe: <code>SuS</code>, <code>Lehrkraefte</code> oder <code>beide</code>.</td></tr>
+          <tr><td><code>--output</code></td><td>Job-ID/Ordnername unter <code>results/</code>.</td></tr>
+          <tr><td><code>--document</code></td><td>Lokale HTML/PDF/Text-Dokumente; mehrfach nutzbar.</td></tr>
+          <tr><td><code>--agb-url</code>, <code>--privacy-url</code>, <code>--avv-url</code></td><td>Remote-Dokumente für AGB, Datenschutz und AVV.</td></tr>
+          <tr><td><code>--md</code>, <code>--pdf</code></td><td>Direkte Report-Ausgabe als Markdown/PDF.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="reports">
+      <h2>3. Reports aus bestehenden Ergebnissen erzeugen</h2>
+      <p>Wenn bereits ein <code>result.json</code> existiert, erzeugt <code>vidis-report</code> daraus einen deutschen Markdown- oder PDF-Bericht.</p>
+      <pre><code>uv run vidis-report \
+  --input results/example-full/result.json \
+  --capture results/example-full/capture.json \
+  --md results/example-full/report.md \
+  --pdf results/example-full/report.pdf</code></pre>
+      <p><code>--input</code> akzeptiert entweder eine Job-ID unter <code>results/</code> oder einen direkten Pfad zu <code>result.json</code>.</p>
+    </section>
+
+    <section id="api">
+      <h2>4. FastAPI-Server für Automatisierung</h2>
+      <p>Für Batch- oder Integrationsfälle kann das Tool als API laufen.</p>
+      <pre><code>uv run vidis serve --host 127.0.0.1 --port 8645</code></pre>
+      <div class="grid">
+        <div class="card">
+          <span class="tag">Health</span>
+          <pre><code>curl http://127.0.0.1:8645/health</code></pre>
+        </div>
+        <div class="card">
+          <span class="tag">Kriterien</span>
+          <pre><code>curl http://127.0.0.1:8645/criteria</code></pre>
+        </div>
+        <div class="card">
+          <span class="tag">Job starten</span>
+          <pre><code>curl -X POST http://127.0.0.1:8645/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"target_url":"https://example.com","pages":8}'</code></pre>
+        </div>
+      </div>
+      <h3>Job pollieren und Report erzeugen</h3>
+      <pre><code>curl http://127.0.0.1:8645/jobs/&lt;job_id&gt;
+
+curl -X POST http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports \
+  -H 'Content-Type: application/json' \
+  -d '{"format":"pdf"}'
+
+curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf</code></pre>
+      <p>Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden.</p>
+    </section>
+
+    <section id="outputs">
+      <h2>5. Ergebnisse verstehen</h2>
+      <div class="status-grid">
+        <div class="status"><strong class="pass">PASS</strong><br>Automatisch ausreichende Evidenz gefunden.</div>
+        <div class="status"><strong class="fail">FAIL</strong><br>Automatisch klare Gegen-Evidenz gefunden.</div>
+        <div class="status"><strong class="manual">MANUELL</strong><br>Keine belastbare automatische Entscheidung; menschliche Prüfung nötig.</div>
+      </div>
+      <h3>Typische Dateien</h3>
+      <ul>
+        <li><code>results/&lt;job_id&gt;/result.json</code> – maschinenlesbare Findings pro VIDIS-Kriterium.</li>
+        <li><code>results/&lt;job_id&gt;/capture.json</code> – Browser-/Website-Signale wie Requests, Cookies, Storage, Scripts.</li>
+        <li><code>results/&lt;job_id&gt;/code_capture.json</code> – statische Code-Signale.</li>
+        <li><code>results/&lt;job_id&gt;/document_capture.json</code> – extrahierte Dokument-Snippets.</li>
+        <li><code>report.md</code> / <code>report.pdf</code> – menschenlesbarer deutscher Bericht.</li>
+      </ul>
+      <p class="note"><code>MANUELL</code> ist kein Fehler. Es bedeutet, dass das Tool konservativ bleibt und keine automatische Aussage vortäuscht.</p>
+    </section>
+
+    <section id="troubleshooting">
+      <h2>6. Troubleshooting</h2>
+      <h3>CLI zeigt veraltete Kommandos</h3>
+      <p>Aktuell gibt es <code>vidis check</code>, <code>vidis serve</code> und <code>vidis-report</code>. Alte Namen wie <code>check-url</code> sind nicht gültig.</p>
+      <h3>Browser-/Website-Checks schlagen fehl</h3>
+      <ul>
+        <li>URL mit <code>https://</code> angeben.</li>
+        <li><code>--pages</code> reduzieren, wenn der Crawl zu lange dauert.</li>
+        <li>Bei Captcha/Login/Walled-Garden bleiben Kriterien erwartbar <code>MANUELL</code>.</li>
+      </ul>
+      <h3>PDF ist leer oder fehlt</h3>
+      <ul>
+        <li>Prüfen, ob <code>result.json</code> existiert.</li>
+        <li><code>uv run vidis-report --input results/&lt;job_id&gt;/result.json --pdf results/&lt;job_id&gt;/report.pdf</code> erneut ausführen.</li>
+      </ul>
+      <h3>Regressionstest</h3>
+      <pre><code>uv run pytest -q
+uv run python -m vidis_compliance.report_cli --input quick --md results/quick/report-v2.md --pdf results/quick/report-v2.pdf</code></pre>
+    </section>
+  </main>
+
+  <footer>
+    Stand: VIDIS Compliance Suite V0.2 criteria registry. Dieses Dokument beschreibt die lokale Tool-Bedienung, ersetzt aber keine fachliche VIDIS-Rechts-/Datenschutzprüfung.
+  </footer>
+</body>
+</html>
