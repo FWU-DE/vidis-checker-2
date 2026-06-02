@@ -112,6 +112,13 @@ RDS-AGB-369:
   must: true
   description: |
 
+RDS-SPE-370:
+  name: Sponsoring
+  area: RDS
+  must: true
+  description: |
+    Sponsoring, Produktplatzierungen und sonstige wirtschaftliche Interessen sind transparent zu kennzeichnen; fehlen belastbare Dokumenthinweise, ist eine manuelle Prüfung erforderlich.
+
 RDS-VIN-354:
   name: Jugendmedienschutz
   area: RDS

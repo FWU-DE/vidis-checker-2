@@ -30,6 +30,7 @@ def test_analyze_html_and_text_documents_maps_strong_evidence_to_vidis_findings(
         Auftragsverarbeitungsvertrag gemäß Art. 28 DSGVO.
         Nach Vertragsende werden personenbezogene Daten nach Wahl des Auftraggebers gelöscht oder zurückgegeben.
         Technische und organisatorische Maßnahmen (TOMs) inklusive Verschlüsselung und Zugriffskontrolle sichern die Verarbeitung.
+        Sponsoring und wirtschaftliche Unterstützer werden transparent gekennzeichnet und offengelegt.
         """,
         encoding="utf-8",
     )
@@ -47,8 +48,28 @@ def test_analyze_html_and_text_documents_maps_strong_evidence_to_vidis_findings(
     assert "datenschutz@example.test" in by_code["RDS-DSO-383"].note
     assert by_code["RDS-AGB-368"].status == "PASS"
     assert by_code["RDS-AGB-369"].status == "PASS"
+    assert by_code["RDS-SPE-370"].status == "PASS"
+    assert "Sponsoring" in by_code["RDS-SPE-370"].note
     assert capture["documents"][0]["location"] == str(privacy)
     assert capture["evidence"]["RDS-DEV-381"]
+    assert capture["evidence"]["RDS-SPE-370"]
+
+
+def test_analyze_documents_flags_undisclosed_sponsoring_for_rds_spe_370(tmp_path: Path) -> None:
+    terms = tmp_path / "terms.txt"
+    terms.write_text(
+        """
+        Dieses Lernangebot enthält gesponserte Inhalte und Produktplatzierungen.
+        Sponsoren und wirtschaftliche Interessen werden gegenüber Nutzenden nicht offengelegt.
+        """,
+        encoding="utf-8",
+    )
+
+    findings, _capture = analyze_documents([terms])
+    by_code = {finding.criterion: finding for finding in findings}
+
+    assert by_code["RDS-SPE-370"].status == "FAIL"
+    assert "nicht offengelegt" in by_code["RDS-SPE-370"].note
 
 
 def test_pdf_text_fallback_extracts_literal_strings_without_optional_pdf_dependency() -> None:
@@ -91,7 +112,21 @@ def test_cli_check_document_inputs_outputs_document_capture_and_replaces_placeho
     assert result.exit_code == 0, result.output
     payload = json.loads((tmp_path / "results" / "docjob" / "result.json").read_text(encoding="utf-8"))
     by_code = {finding["criterion"]: finding for finding in payload["findings"]}
-    for code in ["RDS-AGB-368", "RDS-AGB-369", "RDS-DEV-380", "RDS-DEV-381", "RDS-DEV-466", "RDS-DSO-383"]:
+    for code in ["RDS-AGB-368", "RDS-AGB-369", "RDS-SPE-370", "RDS-DEV-380", "RDS-DEV-381", "RDS-DEV-466", "RDS-DSO-383"]:
         assert by_code[code]["note"] != "Not yet implemented"
     assert by_code["RDS-AGB-369"]["status"] == "PASS"
     assert (tmp_path / "results" / "docjob" / "document_capture.json").exists()
+
+
+def test_rds_spe_370_is_in_registry_and_coverage_matrix() -> None:
+    from vidis_compliance.cli import load_criteria
+    from vidis_compliance.coverage_matrix import build_coverage_matrix
+
+    criteria = load_criteria()
+    matrix = build_coverage_matrix()
+    criterion_row = next(row for row in matrix["rows"] if row["code"] == "RDS-SPE-370")
+
+    assert "RDS-SPE-370" in criteria.items
+    assert criteria.items["RDS-SPE-370"].name == "Sponsoring"
+    assert criterion_row["new_platform_status"] == "automated"
+    assert "document_capture.json" in criterion_row["evidence_artifacts"]

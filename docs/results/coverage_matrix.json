@@ -1,6 +1,6 @@
 {
   "title": "VIDIS Migration Coverage Matrix",
-  "generated_at": "2026-06-02T12:31:14+00:00",
+  "generated_at": "2026-06-02T12:38:27+00:00",
   "criteria_registry": "src/vidis_compliance/criteria/vidis_v0_2.yaml",
   "columns": [
     "code",
@@ -266,13 +266,13 @@
       "code": "RDS-SPE-370",
       "name": "Sponsoring",
       "area": "RDS",
-      "old_checker_status": "covered as registry/manual inventory item",
-      "new_platform_status": "manual-inventory",
-      "input_needed": "Human assessment and product documentation.",
-      "automation_level": "manual",
-      "evidence_artifacts": "result.json, Markdown/PDF report.",
-      "cli_api_availability": "CLI/API emit MANUELL fallback when no automated source is wired.",
-      "known_limitations": "No automated detector is wired; buyer/operator must review external evidence."
+      "old_checker_status": "migrated from legacy terms-of-use/AGB semantic check",
+      "new_platform_status": "automated",
+      "input_needed": "AGB/privacy/AVV document files or URLs.",
+      "automation_level": "fully automated signal/check result for supplied inputs",
+      "evidence_artifacts": "result.json, Markdown/PDF report, document_capture.json.",
+      "cli_api_availability": "CLI: vidis check; reports: vidis-report report; API: FastAPI job endpoints for async runs; document URL/file inputs available in CLI.",
+      "known_limitations": "Text-pattern analysis is evidence-oriented and can miss semantic/legal nuance."
     },
     {
       "kind": "criterion",
@@ -398,11 +398,11 @@
       "name": "FastAPI document URL ingestion",
       "old_checker_status": "document URLs were part of the migration requirement set",
       "new_platform_status": "partial-migration",
-      "input_needed": "AGB, privacy, and AVV URLs or local files.",
-      "automation_level": "CLI automated, API gap",
+      "input_needed": "AGB, privacy, and AVV URLs or local server-side document files.",
+      "automation_level": "CLI/API automated for local documents and HTTP(S) document URLs",
       "evidence_artifacts": "document_capture.json and criterion notes from document analysis.",
-      "cli_api_availability": "CLI supports --agb-url, --privacy-url, --avv-url, and --document; FastAPI parity for document URLs is incomplete.",
-      "known_limitations": "API users cannot yet submit all document URL inputs through the same interface as the CLI."
+      "cli_api_availability": "CLI supports --agb-url, --privacy-url, --avv-url, and --document; FastAPI accepts document_paths plus agb_url, privacy_url, and avv_url.",
+      "known_limitations": "Remote document fetches are limited to HTTP(S); local document paths must exist on the API server."
     },
     {
       "kind": "legacy_feature",
@@ -410,12 +410,12 @@
       "area": "legacy",
       "name": "RDS-SPE-370 criterion mapping",
       "old_checker_status": "legacy/spec comparison identified a mapping question",
-      "new_platform_status": "planned-gap",
-      "input_needed": "Authoritative VIDIS v0.2/vNext registry decision for RDS-SPE-370.",
-      "automation_level": "not automatable until mapped",
-      "evidence_artifacts": "This coverage row documents the gap; no registry criterion exists in vidis_v0_2.yaml.",
-      "cli_api_availability": "No CLI/API check exists because the criterion is not in the active registry.",
-      "known_limitations": "RDS-SPE-370 is explicitly not emitted as a criterion row to keep the active registry one-to-one."
+      "new_platform_status": "partial-migration",
+      "input_needed": "AGB/privacy/AVV document files or URLs.",
+      "automation_level": "conservative document classifier plus manual fallback",
+      "evidence_artifacts": "result.json, Markdown/PDF report, document_capture.json.",
+      "cli_api_availability": "RDS-SPE-370 is now in the active registry and emitted by document analysis for CLI/API result output.",
+      "known_limitations": "PASS/FAIL requires explicit Sponsoring/economic-interest evidence; absence remains MANUELL because the old checker also relied on semantic AGB review."
     }
   ]
 }

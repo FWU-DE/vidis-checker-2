@@ -18,6 +18,7 @@ DOCUMENT_CRITERIA = (
     "RDS-DSO-383",
     "RDS-AGB-368",
     "RDS-AGB-369",
+    "RDS-SPE-370",
 )
 
 
@@ -106,6 +107,18 @@ RULES: dict[str, EvidenceRule] = {
             r"(?:kein|ohne)\s+(?:auftragsverarbeitungsvertrag|\bavv\b)",
         ),
         gap_note="Kein eindeutiger AVV-/Art.-28-DSGVO-Nachweis gefunden.",
+    ),
+    "RDS-SPE-370": EvidenceRule(
+        pass_patterns=(
+            r"(?:sponsoring|sponsor(?:en|ing)?|wirtschaftliche\s+(?:unterstützer|unterstuetzer|interessen)).{0,180}(?:transparent|gekennzeichnet|offengelegt|hinweis|kenntlich)",
+            r"(?:transparent|gekennzeichnet|offengelegt|kenntlich).{0,180}(?:sponsoring|sponsor(?:en|ing)?|wirtschaftliche\s+(?:unterstützer|unterstuetzer|interessen))",
+            r"(?:keine|kein)\s+(?:sponsoring|sponsor(?:en|ing)?|produktplatzierung|wirtschaftliche\s+interessen)",
+        ),
+        fail_patterns=(
+            r"(?:sponsoring|sponsor(?:en|ing)?|produktplatzierung|wirtschaftliche\s+interessen).{0,200}(?:nicht|keine|ohne).{0,80}(?:offengelegt|gekennzeichnet|kenntlich|hinweis)",
+            r"(?:nicht|keine|ohne).{0,80}(?:offengelegt|gekennzeichnet|kenntlich|hinweis).{0,200}(?:sponsoring|sponsor(?:en|ing)?|produktplatzierung|wirtschaftliche\s+interessen)",
+        ),
+        gap_note="Keine belastbare Aussage zu Sponsoring/Werbe- oder wirtschaftlichen Interessen gefunden; manuelle Prüfung erforderlich.",
     ),
 }
 

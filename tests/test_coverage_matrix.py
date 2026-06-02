@@ -38,8 +38,12 @@ def test_coverage_matrix_includes_required_legacy_gap_rows() -> None:
         "LEGACY-RDS-SPE-370-MAPPING",
     ]:
         row = next(row for row in matrix["rows"] if row["code"] == code)
-        assert row["new_platform_status"] in {"partial-migration", "not-migrated", "planned-gap"}
+        assert row["new_platform_status"] in {"partial-migration", "not-migrated", "planned-gap", "resolved"}
         assert row["known_limitations"]
+
+    spe_row = next(row for row in matrix["rows"] if row["code"] == "LEGACY-RDS-SPE-370-MAPPING")
+    assert spe_row["new_platform_status"] == "partial-migration"
+    assert "document classifier" in spe_row["automation_level"]
 
 
 def test_default_coverage_outputs_are_under_docs_results() -> None:
