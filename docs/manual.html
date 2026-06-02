@@ -254,7 +254,7 @@ uv run pytest -q</code></pre>
         <tbody>
           <tr><td><code>--url</code></td><td>Start-URL für Browser-/Website-Prüfung.</td></tr>
           <tr><td><code>--code-path</code></td><td>Lokales Repository oder Source-Verzeichnis für statische Checks.</td></tr>
-          <tr><td><code>--pages</code></td><td>Maximale Anzahl gecrawlter Seiten, default <code>8</code>.</td></tr>
+          <tr><td><code>--pages</code></td><td>Maximale Anzahl eindeutig gecrawlter Seiten, default <code>8</code>. URL-Varianten derselben Seite wie <code>/</code>, <code>/index.html</code>, Fragmente und Tracking-Parameter werden für Crawl und Screenshots dedupliziert.</td></tr>
           <tr><td><code>--audience</code></td><td>Zielgruppe: <code>SuS</code>, <code>Lehrkraefte</code> oder <code>beide</code>.</td></tr>
           <tr><td><code>--output</code></td><td>Job-ID/Ordnername unter <code>results/</code>.</td></tr>
           <tr><td><code>--document</code></td><td>Lokale HTML/PDF/Text-Dokumente; mehrfach nutzbar.</td></tr>

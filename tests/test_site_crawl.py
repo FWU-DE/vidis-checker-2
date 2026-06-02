@@ -2,6 +2,7 @@ from pathlib import Path
 
 from vidis_compliance.sources.site.crawl import (
     PageCapture,
+    _canonical_page_url,
     _capture_page,
     aggregate_captures,
     discover_internal_links,
@@ -90,6 +91,15 @@ def test_discover_internal_links_keeps_same_origin_absolute_relative_and_sorted_
     ]
 
 
+def test_canonical_page_url_normalizes_homepage_variants_for_crawl_dedupe():
+    assert _canonical_page_url("https://www.example.test") == "https://www.example.test/"
+    assert _canonical_page_url("https://www.example.test/") == "https://www.example.test/"
+    assert _canonical_page_url("https://www.example.test#top") == "https://www.example.test/"
+    assert _canonical_page_url("https://www.example.test/index.html") == "https://www.example.test/"
+    assert _canonical_page_url("https://www.example.test/index.php?utm_source=foo") == "https://www.example.test/"
+    assert _canonical_page_url("https://www.example.test/start?b=2&a=1") == "https://www.example.test/start?a=1&b=2"
+
+
 def test_aggregate_captures_deduplicates_cookies_storage_scripts_requests_and_screenshots():
     captures = [
         PageCapture(
@@ -149,6 +159,24 @@ def test_aggregate_captures_deduplicates_cookies_storage_scripts_requests_and_sc
                     "path": "/tmp/page-2.png",
                     "authenticated": True,
                     "local_only": True,
+                }
+            ],
+        ),
+        PageCapture(
+            url="https://example.test/index.html?utm_source=foo",
+            cookies=[],
+            local_storage={},
+            session_storage={},
+            scripts=[],
+            requests=["https://example.test/index.html?utm_source=foo"],
+            screenshots=[
+                {
+                    "label": "page-3",
+                    "url": "https://example.test/index.html?utm_source=foo",
+                    "filename": "page-3.png",
+                    "path": "/tmp/page-3.png",
+                    "authenticated": False,
+                    "local_only": False,
                 }
             ],
         ),
