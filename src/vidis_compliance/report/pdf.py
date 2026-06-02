@@ -27,7 +27,26 @@ from .markdown import _sanitize_raw_capture
 
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
-SCREENSHOT_MAX_HEIGHT_CM = 20.6
+SCREENSHOT_HORIZONTAL_MARGIN_CM = 1.1
+SCREENSHOT_MAX_HEIGHT_CM = 20.8
+
+
+def screenshot_slot_width_points() -> float:
+    return PAGE_WIDTH - (2 * SCREENSHOT_HORIZONTAL_MARGIN_CM * cm)
+
+
+def screenshot_slot_height_points() -> float:
+    return SCREENSHOT_MAX_HEIGHT_CM * cm
+
+
+def _scaled_screenshot_image(path: Path) -> Image:
+    image = Image(str(path))
+    max_width = screenshot_slot_width_points()
+    max_height = screenshot_slot_height_points()
+    scale = min(max_width / image.imageWidth, max_height / image.imageHeight)
+    image.drawWidth = image.imageWidth * scale
+    image.drawHeight = image.imageHeight * scale
+    return image
 
 
 def generate_pdf(
@@ -217,19 +236,13 @@ def _screenshot_pages(document: ReportDocument, styles) -> list:
     if not usable:
         flow.append(Paragraph("Keine einbettbaren Screenshot-Dateien vorhanden.", styles["BodyText"]))
         return flow
-    max_width = PAGE_WIDTH - 2.7 * cm
-    max_height = SCREENSHOT_MAX_HEIGHT_CM * cm
     for index, (screenshot, path) in enumerate(usable[:6], start=1):
         label = str(screenshot.get("label") or f"Screenshot {index}")
         url = str(screenshot.get("url") or "")
         flow.append(Paragraph(f"{index}. {_xml_escape(label)}", styles["CriterionTitle"]))
         if url:
             flow.append(Paragraph(_xml_escape(_compact_url(url, 130)), styles["SmallMuted"]))
-        image = Image(str(path))
-        scale = min(max_width / image.imageWidth, max_height / image.imageHeight, 1.0)
-        image.drawWidth = image.imageWidth * scale
-        image.drawHeight = image.imageHeight * scale
-        flow.append(image)
+        flow.append(_scaled_screenshot_image(path))
         flow.append(Spacer(1, 0.25 * cm))
         if index != min(len(usable), 6):
             flow.append(PageBreak())

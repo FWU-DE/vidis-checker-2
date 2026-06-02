@@ -10,7 +10,9 @@ from urllib.parse import urldefrag, urljoin, urlparse
 
 from playwright.sync_api import BrowserContext, Page, ViewportSize, sync_playwright
 
-SCREENSHOT_VIEWPORT = ViewportSize(width=1280, height=1400)
+# Match the PDF screenshot appendix slot closely: wide enough for readable text,
+# tall enough to fill one A4 page without excessive downscaling or side margins.
+SCREENSHOT_VIEWPORT = ViewportSize(width=1900, height=2100)
 
 JS_LOCAL = """
 () => {
