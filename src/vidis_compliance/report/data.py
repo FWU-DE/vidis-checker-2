@@ -126,7 +126,21 @@ def _evidence_for_finding(
         session_storage = raw_capture.get("session_storage") or {}
         evidence.append(EvidenceItem("LocalStorage-Schlüssel", ", ".join(local_storage.keys()) or "—"))
         evidence.append(EvidenceItem("SessionStorage-Schlüssel", ", ".join(session_storage.keys()) or "—"))
-    if finding.criterion in {"ITS-ENC-359", "ITS-ENC-360", "RDS-IPF-364", "RDS-IPF-365"}:
+    if finding.criterion in {"ITS-ENC-359", "ITS-ENC-360"}:
         if raw_capture.get("url"):
             evidence.append(EvidenceItem("Erfasste URL", str(raw_capture["url"])))
+    if finding.criterion in {"RDS-IPF-364", "RDS-IPF-366"}:
+        ipf = raw_capture.get("ipf") or {}
+        if ipf.get("impressum_url"):
+            evidence.append(EvidenceItem("Impressum-URL", str(ipf["impressum_url"])))
+        visited = ipf.get("visited_urls") or []
+        if visited:
+            evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
+    if finding.criterion in {"RDS-IPF-365", "RDS-IPF-367"}:
+        ipf = raw_capture.get("ipf") or {}
+        if ipf.get("privacy_url"):
+            evidence.append(EvidenceItem("Datenschutzerklärung-URL", str(ipf["privacy_url"])))
+        visited = ipf.get("visited_urls") or []
+        if visited:
+            evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
     return evidence

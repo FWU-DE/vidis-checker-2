@@ -6,6 +6,7 @@ import typer
 from .models import JobConfig, JobResult, CheckFinding, CriteriaIndex, VidisCriterion
 from .checks.site.cookies import classify_cookies, classify_tracking_pixel, classify_local_storage
 from .checks.site.basic_http import check_site_transport
+from .checks.site.ipf import analyze_ipf_site, findings_from_ipf_analysis
 from .sources.site.crawl import crawl
 from .sources.code.inspect import inspect_code_path
 from .sources.documents.analyze import analyze_documents, build_document_inputs
@@ -69,6 +70,13 @@ def check(
         findings.append(CheckFinding(criterion="RDS-CUC-374", status=s3, note=n3))
         findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note="Datenschutzerklärung vs. Cookies abgleichen"))
         findings.extend(check_site_transport(url))
+        ipf_analysis = analyze_ipf_site(url)
+        raw_capture["ipf"] = {
+            "visited_urls": ipf_analysis.visited_urls,
+            "impressum_url": ipf_analysis.impressum.url,
+            "privacy_url": ipf_analysis.privacy.url,
+        }
+        findings.extend(findings_from_ipf_analysis(ipf_analysis))
     if code_path:
         code_findings, code_capture = inspect_code_path(code_path, audience)
         by_criterion = {finding.criterion: finding for finding in findings}

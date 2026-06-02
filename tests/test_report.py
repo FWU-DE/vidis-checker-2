@@ -26,6 +26,34 @@ def test_generate_markdown_includes_criterion_text_evidence_and_raw_capture(tmp_
     assert '"cookies"' in text
 
 
+def test_generate_markdown_includes_ipf_evidence_urls(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[
+            CheckFinding(
+                criterion="RDS-IPF-366",
+                status="PASS",
+                note="Impressum vollständig wirkend: https://example.test/impressum",
+            )
+        ],
+    )
+    raw_capture = {
+        "url": "https://example.test/",
+        "ipf": {
+            "visited_urls": ["https://example.test/", "https://example.test/impressum"],
+            "impressum_url": "https://example.test/impressum",
+            "privacy_url": "https://example.test/datenschutz",
+        },
+    }
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture=raw_capture)
+
+    text = output.read_text(encoding="utf-8")
+    assert "| Impressum-URL | https://example.test/impressum |" in text
+    assert "| Besuchte IPF-URLs | https://example.test/, https://example.test/impressum |" in text
+
+
 def test_generate_pdf_writes_non_empty_report(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",
