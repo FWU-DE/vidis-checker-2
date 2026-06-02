@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Sequence
-from urllib.parse import urldefrag, urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urldefrag, urljoin, urlparse, urlunparse
 
 from playwright.sync_api import BrowserContext, Page, ViewportSize, sync_playwright
 
@@ -151,6 +151,41 @@ def _normalize_url(url: str) -> str:
     return normalized
 
 
+_TRACKING_QUERY_PREFIXES = ("utm_",)
+_TRACKING_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "msclkid",
+}
+_INDEX_FILENAMES = {"index.htm", "index.html", "index.php", "default.htm", "default.html"}
+
+
+def _canonical_page_url(url: str) -> str:
+    """Return a stable page identity for crawl/screenshot deduplication."""
+    absolute, _fragment = urldefrag(_normalize_url(url))
+    parsed = urlparse(absolute)
+    scheme = parsed.scheme.lower() or "https"
+    netloc = parsed.netloc.lower()
+    path = parsed.path or "/"
+    if path != "/":
+        segments = path.rsplit("/", 1)
+        filename = segments[-1].lower()
+        if filename in _INDEX_FILENAMES:
+            path = (segments[0] or "") + "/"
+        elif path.endswith("/"):
+            path = path.rstrip("/") or "/"
+    query_pairs = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in _TRACKING_QUERY_KEYS
+        and not key.lower().startswith(_TRACKING_QUERY_PREFIXES)
+    ]
+    query = urlencode(sorted(query_pairs), doseq=True)
+    return urlunparse((scheme, netloc, path, "", query, ""))
+
+
 @dataclass
 class PageCapture:
     url: str
@@ -210,6 +245,15 @@ def _dedupe_sorted(values: Iterable[str]) -> List[str]:
     return sorted({value for value in values if value})
 
 
+def _dedupe_urls_sorted(values: Iterable[str]) -> List[str]:
+    by_key: dict[str, str] = {}
+    for value in values:
+        if not value:
+            continue
+        by_key.setdefault(_canonical_page_url(value), value)
+    return [by_key[key] for key in sorted(by_key)]
+
+
 def _dedupe_dicts(values: Iterable[dict], keys: tuple[str, ...]) -> List[dict]:
     by_key: dict[tuple[str, ...], dict] = {}
     for value in values:
@@ -220,6 +264,24 @@ def _dedupe_dicts(values: Iterable[dict], keys: tuple[str, ...]) -> List[dict]:
             continue
         by_key[dedupe_key] = value
     return [by_key[key] for key in sorted(by_key)]
+
+
+def _dedupe_screenshots(values: Iterable[dict]) -> List[dict]:
+    by_page: dict[tuple[str, str], dict] = {}
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        url = str(value.get("url") or "")
+        filename = str(value.get("filename") or "")
+        path = str(value.get("path") or "")
+        if url:
+            dedupe_key = ("url", _canonical_page_url(url))
+        elif filename or path:
+            dedupe_key = ("file", filename or path)
+        else:
+            continue
+        by_page.setdefault(dedupe_key, value)
+    return [by_page[key] for key in sorted(by_page)]
 
 
 def _cookie_key(cookie: dict) -> tuple[str, str, str, str]:
@@ -266,8 +328,13 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
     screenshots: list[dict] = []
     vision_reviews: list[dict] = []
 
+    seen_visited_urls: set[str] = set()
+
     for capture in captures:
-        visited_urls.append(capture.url)
+        canonical_capture_url = _canonical_page_url(capture.url)
+        if canonical_capture_url not in seen_visited_urls:
+            seen_visited_urls.add(canonical_capture_url)
+            visited_urls.append(capture.url)
         for cookie in capture.cookies:
             cookies_by_key[_cookie_key(cookie)] = cookie
         local_storage.update(capture.local_storage)
@@ -302,13 +369,13 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
         local_storage=dict(sorted(local_storage.items())),
         session_storage=dict(sorted(session_storage.items())),
         scripts=_dedupe_sorted(scripts),
-        requests=_dedupe_sorted(requests),
+        requests=_dedupe_urls_sorted(requests),
         resources=_dedupe_dicts(resources, ("type", "url", "selector")),
         links=_dedupe_dicts(links, ("url", "text", "selector")),
         visible_text=_dedupe_sorted(visible_text),
         browser_signals=browser_signals,
-        visited_urls=list(dict.fromkeys(visited_urls)),
-        screenshots=_dedupe_dicts(screenshots, ("filename", "path")),
+        visited_urls=visited_urls,
+        screenshots=_dedupe_screenshots(screenshots),
         vision_reviews=_dedupe_dicts(vision_reviews, ("label", "note")),
     )
 
@@ -446,9 +513,10 @@ def crawl(
         try:
             while queue and len(captures) < max_pages:
                 current_url = queue.popleft()
-                if current_url in seen:
+                current_key = _canonical_page_url(current_url)
+                if current_key in seen:
                     continue
-                seen.add(current_url)
+                seen.add(current_key)
 
                 request_start = len(request_log)
                 capture = _capture_page(
@@ -461,15 +529,21 @@ def crawl(
                     screenshot_dir=screenshot_path,
                     screenshot_index=len(captures) + 1,
                 )
+                final_key = _canonical_page_url(capture.url)
+                if final_key != current_key and final_key in seen:
+                    continue
+                seen.add(final_key)
                 captures.append(capture)
 
                 remaining = max_pages - len(captures)
                 if remaining <= 0:
                     continue
+                queued_keys = {_canonical_page_url(link) for link in queue}
                 links = [
                     link
                     for link in _discover_from_page(page)
-                    if link not in seen and link not in queue
+                    if _canonical_page_url(link) not in seen
+                    and _canonical_page_url(link) not in queued_keys
                 ]
                 rng.shuffle(links)
                 queue.extend(links[:remaining])
