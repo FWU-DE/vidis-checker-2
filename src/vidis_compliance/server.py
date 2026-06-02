@@ -1,13 +1,292 @@
-from fastapi import FastAPI
+from __future__ import annotations
+
+import json
+import os
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal, cast
+
+from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field, HttpUrl, model_validator
+
+from . import cli as cli_module
 from .cli import load_criteria
+from .models import CheckFinding, JobConfig, JobResult, Status
+from .report.markdown import generate_markdown
+from .report.pdf import generate_pdf
 
 app = FastAPI(title="VIDIS Compliance API")
+
+JobStatus = Literal["queued", "running", "completed", "failed"]
+ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "job.json"}
+ALLOWED_REPORTS = {"report.md", "report.pdf"}
+_STORE_LOCK = threading.Lock()
+_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get("VIDIS_JOB_WORKERS", "4")))
+
+
+class JobCreateRequest(BaseModel):
+    target_url: HttpUrl | None = None
+    code_path: str | None = None
+    document_path: str | None = None
+    target_audience: Literal["SuS", "Lehrkraefte", "beide"] = "beide"
+    pages: int = Field(default=8, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def require_target(self) -> "JobCreateRequest":
+        if not (self.target_url or self.code_path or self.document_path):
+            raise ValueError("target_url, code_path or document_path is required")
+        return self
+
+
+class JobCreatedResponse(BaseModel):
+    id: str
+    status: JobStatus
+    status_url: str
+
+
+class JobMetadata(BaseModel):
+    id: str
+    status: JobStatus
+    created_at: str
+    updated_at: str
+    request: JobCreateRequest
+    result: JobResult | None = None
+    error: str | None = None
+    artifacts: dict[str, str] = Field(default_factory=dict)
+    reports: dict[str, str] = Field(default_factory=dict)
+
+
+class ReportCreateRequest(BaseModel):
+    format: Literal["md", "pdf"]
+
+
+class ReportCreatedResponse(BaseModel):
+    job_id: str
+    format: Literal["md", "pdf"]
+    download_url: str
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
+
 @app.get("/criteria")
 def criteria():
     crit = load_criteria()
     return {"items": {k: v.model_dump() for k, v in crit.items.items()}}
+
+
+@app.post("/jobs", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_job(request: JobCreateRequest) -> JobCreatedResponse:
+    job_id = uuid.uuid4().hex
+    metadata = JobMetadata(
+        id=job_id,
+        status="queued",
+        created_at=_now(),
+        updated_at=_now(),
+        request=request,
+    )
+    _job_dir(job_id).mkdir(parents=True, exist_ok=False)
+    _write_metadata(metadata)
+    _JOB_EXECUTOR.submit(_run_job, job_id)
+    return JobCreatedResponse(id=job_id, status=metadata.status, status_url=f"/jobs/{job_id}")
+
+
+@app.get("/jobs/{job_id}", response_model=JobMetadata)
+def get_job(job_id: str) -> JobMetadata:
+    return _read_metadata(job_id)
+
+
+@app.get("/jobs/{job_id}/artifacts/{artifact_name}")
+def get_artifact(job_id: str, artifact_name: str):
+    path = _safe_named_file(job_id, artifact_name, ALLOWED_ARTIFACTS)
+    if path.suffix == ".json":
+        return Response(path.read_text(encoding="utf-8"), media_type="application/json")
+    return FileResponse(path)
+
+
+@app.post(
+    "/jobs/{job_id}/reports",
+    response_model=ReportCreatedResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_report(job_id: str, request: ReportCreateRequest) -> ReportCreatedResponse:
+    metadata = _read_metadata(job_id)
+    if metadata.status != "completed" or metadata.result is None:
+        raise HTTPException(status_code=409, detail="job is not completed")
+    report_name = f"report.{request.format}"
+    output = _job_dir(job_id) / report_name
+    raw_capture = _load_optional_json(_job_dir(job_id) / "capture.json")
+    if request.format == "md":
+        generate_markdown(metadata.result, output, raw_capture=raw_capture)
+    else:
+        generate_pdf(metadata.result, output, raw_capture=raw_capture)
+    metadata.reports[request.format] = f"/jobs/{job_id}/reports/{report_name}"
+    metadata.updated_at = _now()
+    _write_metadata(metadata)
+    return ReportCreatedResponse(
+        job_id=job_id,
+        format=request.format,
+        download_url=metadata.reports[request.format],
+    )
+
+
+@app.get("/jobs/{job_id}/reports/{report_name}")
+def get_report(job_id: str, report_name: str):
+    path = _safe_named_file(job_id, report_name, ALLOWED_REPORTS)
+    media_type = "text/markdown; charset=utf-8" if report_name.endswith(".md") else "application/pdf"
+    if report_name.endswith(".md"):
+        return Response(path.read_text(encoding="utf-8"), media_type=media_type)
+    return FileResponse(path, media_type=media_type, filename=report_name)
+
+
+def _run_job(job_id: str) -> None:
+    metadata = _read_metadata(job_id)
+    try:
+        metadata.status = "running"
+        metadata.updated_at = _now()
+        _write_metadata(metadata)
+
+        result, raw_capture, code_capture = _execute_check(job_id, metadata.request)
+        job_dir = _job_dir(job_id)
+        (job_dir / "result.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        if raw_capture is not None:
+            (job_dir / "capture.json").write_text(
+                json.dumps(raw_capture, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+        if code_capture is not None:
+            (job_dir / "code_capture.json").write_text(
+                json.dumps(code_capture, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        metadata.status = "completed"
+        metadata.result = result
+        metadata.artifacts = _artifact_urls(job_id)
+    except Exception as exc:  # pragma: no cover - defensive job boundary
+        metadata.status = "failed"
+        metadata.error = str(exc)
+    finally:
+        metadata.updated_at = _now()
+        _write_metadata(metadata)
+
+
+def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None]:
+    crit = load_criteria()
+    cfg = JobConfig(
+        job_id=job_id,
+        target_url=str(request.target_url) if request.target_url else None,
+        code_path=request.code_path,
+        pages=request.pages,
+        target_audience=request.target_audience,
+    )
+    findings: list[CheckFinding] = []
+    raw_capture = None
+    code_capture = None
+
+    if cfg.target_url:
+        cap = cli_module.crawl(cfg.target_url, pages=cfg.pages, headless=True)
+        raw_capture = cli_module.asdict(cap)
+        page_signals = {
+            "cookies": cap.cookies,
+            "scripts": cap.scripts,
+            "requests": cap.requests,
+            "local_storage": cap.local_storage,
+            "session_storage": cap.session_storage,
+        }
+        s1, n1 = cli_module.classify_cookies(page_signals, cfg.target_audience)
+        findings.append(CheckFinding(criterion="RDS-CUC-371", status=cast(Status, s1), note=n1))
+        findings.append(CheckFinding(criterion="RDS-CUC-372", status=cast(Status, s1), note=n1))
+        s2, n2 = cli_module.classify_tracking_pixel(page_signals, cfg.target_audience)
+        findings.append(CheckFinding(criterion="RDS-CUC-373", status=cast(Status, s2), note=n2))
+        s3, n3 = cli_module.classify_local_storage(page_signals, cfg.target_audience)
+        findings.append(CheckFinding(criterion="RDS-CUC-374", status=cast(Status, s3), note=n3))
+        findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note="Datenschutzerklärung vs. Cookies abgleichen"))
+
+    if cfg.code_path:
+        code_findings, code_capture = cli_module.inspect_code_path(cfg.code_path, cfg.target_audience)
+        by_criterion = {finding.criterion: finding for finding in findings}
+        for finding in code_findings:
+            by_criterion[finding.criterion] = finding
+        findings = list(by_criterion.values())
+
+    if request.document_path:
+        findings.append(
+            CheckFinding(
+                criterion="RDS-DOC-000",
+                status="MANUELL",
+                note=f"Dokumentprüfung bereitgestellt: {request.document_path}",
+            )
+        )
+
+    wired = {finding.criterion for finding in findings}
+    for code in crit.items.keys():
+        if code not in wired:
+            findings.append(CheckFinding(criterion=code, status="MANUELL", note="Not yet implemented"))
+    return JobResult(job_id=job_id, findings=findings), raw_capture, code_capture
+
+
+def _results_root() -> Path:
+    return Path(os.environ.get("VIDIS_RESULTS_DIR", "results")).resolve()
+
+
+def _job_dir(job_id: str) -> Path:
+    if not job_id or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for ch in job_id):
+        raise HTTPException(status_code=404, detail="job not found")
+    root = _results_root()
+    path = (root / job_id).resolve()
+    if root not in path.parents and path != root:
+        raise HTTPException(status_code=400, detail="invalid job path")
+    return path
+
+
+def _metadata_path(job_id: str) -> Path:
+    return _job_dir(job_id) / "job.json"
+
+
+def _read_metadata(job_id: str) -> JobMetadata:
+    path = _metadata_path(job_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="job not found")
+    return JobMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _write_metadata(metadata: JobMetadata) -> None:
+    with _STORE_LOCK:
+        path = _metadata_path(metadata.id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
+
+
+def _safe_named_file(job_id: str, name: str, allowed: set[str]) -> Path:
+    if name not in allowed or "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(status_code=404, detail="file not found")
+    path = (_job_dir(job_id) / name).resolve()
+    job_dir = _job_dir(job_id).resolve()
+    if path.parent != job_dir or not path.exists():
+        raise HTTPException(status_code=404, detail="file not found")
+    return path
+
+
+def _artifact_urls(job_id: str) -> dict[str, str]:
+    artifacts: dict[str, str] = {}
+    for name in sorted(ALLOWED_ARTIFACTS - {"job.json"}):
+        if (_job_dir(job_id) / name).exists():
+            key = name.replace(".", "_")
+            artifacts[key] = f"/jobs/{job_id}/artifacts/{name}"
+    return artifacts
+
+
+def _load_optional_json(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
