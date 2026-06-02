@@ -352,6 +352,89 @@ def test_generate_markdown_groups_cookie_local_and_session_storage_evidence_once
 
 
 
+def test_generate_markdown_includes_provider_code_review_overview_without_audit_language(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="code-review",
+        findings=[
+            CheckFinding(criterion="RDS-CUC-373", status="FAIL", note="Tracking-/Analytics-SDKs im Quellcode: src/App.tsx:12 Google Analytics"),
+            CheckFinding(criterion="RDS-CUC-374", status="MANUELL", note="localStorage/sessionStorage-Nutzung im Quellcode: src/storage.ts:7 localStorage.setItem('token', value)"),
+        ],
+    )
+    raw_capture = {
+        "code_review": {
+            "root_label": "anbieter-code",
+            "files_scanned": 42,
+            "signals": {
+                "tracking": [{"file": "src/App.tsx", "line": 12, "value": "Google Analytics"}],
+                "storage": [{"file": "src/storage.ts", "line": 7, "value": "localStorage.setItem('token', value)"}],
+                "cookies": [{"file": "src/cookies.ts", "line": 3, "value": "document.cookie = 'x=y'"}],
+                "external_scripts": [{"file": "src/index.html", "line": 9, "value": "https://cdn.example/script.js"}],
+                "fingerprinting": [],
+                "fingerprinting_libraries": [],
+                "device_storage": [],
+                "privacy_links": [],
+                "impressum_links": [],
+            },
+        }
+    }
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture=raw_capture)
+
+    text = output.read_text(encoding="utf-8")
+    assert "## Code-Durchsicht für Anbieter" in text
+    section = text.split("## Code-Durchsicht für Anbieter", 1)[1].split("## Kriterienbewertung", 1)[0]
+    assert "unterstützt Anbieter bei der Selbstprüfung" in section
+    assert "kein Audit" in section
+    assert "keine Zertifizierung" in section
+    assert "Security Audit" not in section
+    assert "| Gescannte Dateien | 42 |" in section
+    assert "| Tracking-/Analytics-Signale | 1 |" in section
+    assert "| Cookie-Schreibzugriffe | 1 |" in section
+    assert "| Browser-Storage-Signale | 1 |" in section
+    assert "| Externe Script-Quellen | 1 |" in section
+    assert "| Auffällige Beispiele | tracking: src/App.tsx:12 Google Analytics" in section
+    assert "| Code-Durchsicht | Quellcode-Signale siehe Abschnitt" in text_section(text, "### RDS-CUC-373:")
+
+
+def test_generate_pdf_includes_provider_code_review_overview(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="code-review-pdf",
+        findings=[CheckFinding(criterion="RDS-CUC-376", status="MANUELL", note="Browserfingerprinting-Signale im Quellcode")],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(
+        result,
+        output,
+        raw_capture={
+            "code_review": {
+                "root_label": "anbieter-code",
+                "files_scanned": 3,
+                "signals": {
+                    "fingerprinting": [{"file": "src/fp.ts", "line": 4, "value": "canvas.toDataURL"}],
+                    "tracking": [],
+                    "storage": [],
+                    "cookies": [],
+                    "external_scripts": [],
+                    "device_storage": [],
+                    "fingerprinting_libraries": [],
+                    "privacy_links": [],
+                    "impressum_links": [],
+                },
+            }
+        },
+    )
+
+    text = subprocess.run(["pdftotext", str(output), "-"], check=True, text=True, capture_output=True).stdout
+    assert "Code-Durchsicht fuer Anbieter" in text
+    assert "unterstuetzt Anbieter bei der Selbstpruefung" in text
+    assert "kein Audit" in text
+    assert "keine Zertifizierung" in text
+    assert "Gescannte Dateien" in text
+    assert "Fingerprinting-Signale" in text
+
+
 def test_generate_markdown_lists_lighthouse_and_webinspector_artifacts(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",

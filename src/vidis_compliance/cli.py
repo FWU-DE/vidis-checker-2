@@ -168,6 +168,9 @@ def check(
         findings.extend(findings_from_ipf_analysis(ipf_analysis))
     if code_path:
         code_findings, code_capture = inspect_code_path(code_path, audience)
+        if raw_capture is None:
+            raw_capture = {}
+        raw_capture["code_review"] = code_capture
         by_criterion = {finding.criterion: finding for finding in findings}
         for finding in code_findings:
             by_criterion[finding.criterion] = finding

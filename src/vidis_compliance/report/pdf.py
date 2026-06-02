@@ -76,6 +76,7 @@ def render_pdf(document: ReportDocument, output_pdf: Path) -> None:
     story.extend(_cover(document, counts, styles))
     story.extend(_screenshot_overview(document, styles))
     story.extend(_cookie_storage_overview(document, styles))
+    story.extend(_code_review_overview(document, styles))
     story.append(Paragraph("Kriterienbewertung", styles["SectionTitle"]))
     for report in document.criteria_reports:
         criterion = report.criterion
@@ -217,6 +218,22 @@ def _cookie_storage_overview(document: ReportDocument, styles) -> list:
         Paragraph(
             "Diese Übersicht fasst Cookies, localStorage und sessionStorage für die betroffenen CUC-Kriterien zusammen. "
             "Storage-Werte werden nicht ausgegeben.",
+            styles["BodyText"],
+        ),
+        _evidence_table(evidence),
+        Spacer(1, 0.45 * cm),
+    ]
+
+
+def _code_review_overview(document: ReportDocument, styles) -> list:
+    evidence = document.code_review_evidence
+    if not evidence:
+        return []
+    return [
+        Paragraph("Code-Durchsicht fuer Anbieter", styles["SectionTitle"]),
+        Paragraph(
+            "Diese Code-Durchsicht unterstuetzt Anbieter bei der Selbstpruefung ihres Quellcodes auf VIDIS-relevante technische Signale. "
+            "Sie ist kein Audit, keine Zertifizierung und keine vollstaendige Security- oder Datenschutzpruefung.",
             styles["BodyText"],
         ),
         _evidence_table(evidence),
