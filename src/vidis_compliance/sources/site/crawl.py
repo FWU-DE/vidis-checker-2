@@ -31,7 +31,7 @@ JS_SESSION = """
 }
 """.strip()
 
-JS_RESOURCES = """
+JS_RESOURCES = r"""
 () => {
   const resources = [];
   const elements = document.querySelectorAll('img, iframe, script, object, embed');
@@ -55,7 +55,7 @@ JS_LINKS = """
 () => Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href'))
 """.strip()
 
-JS_LINK_DETAILS = """
+JS_LINK_DETAILS = r"""
 () => Array.from(document.querySelectorAll('a[href]')).map(a => ({
   url: a.href,
   text: (a.innerText || a.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 180),
@@ -63,7 +63,7 @@ JS_LINK_DETAILS = """
 }))
 """.strip()
 
-JS_VISIBLE_TEXT = """
+JS_VISIBLE_TEXT = r"""
 () => {
   const text = (document.body && document.body.innerText ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
   if (!text) return [];
