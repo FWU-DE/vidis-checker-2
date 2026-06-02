@@ -398,7 +398,12 @@ def _write_metadata(metadata: JobMetadata) -> None:
     with _STORE_LOCK:
         path = _metadata_path(metadata.id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
+        tmp_path = path.with_name(f"{path.name}.tmp")
+        with tmp_path.open("w", encoding="utf-8") as file:
+            file.write(metadata.model_dump_json(indent=2))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(tmp_path, path)
 
 
 def _list_metadata(status_filter: JobStatus | None = None) -> list[JobMetadata]:

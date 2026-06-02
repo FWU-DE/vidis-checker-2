@@ -347,3 +347,15 @@ def test_post_job_accepts_document_path_list_and_rejects_invalid_document_inputs
 
     invalid_url = client.post("/jobs", json={"privacy_url": "file:///etc/passwd"})
     assert invalid_url.status_code == 422
+
+
+
+def test_metadata_writes_are_atomic() -> None:
+    source = Path(server.__file__).read_text(encoding="utf-8")
+    start = source.index("def _write_metadata")
+    end = source.index("def _list_metadata", start)
+    write_metadata_source = source[start:end]
+
+    assert "os.replace" in write_metadata_source
+    assert ".write_text(" not in write_metadata_source
+    assert ".tmp" in write_metadata_source
