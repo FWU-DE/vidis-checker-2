@@ -75,7 +75,7 @@ def coverage(
     output_json: Path = typer.Option(DEFAULT_COVERAGE_JSON, "--json", help="Pfad für die maschinenlesbare Coverage-Matrix."),
     output_html: Path = typer.Option(DEFAULT_COVERAGE_HTML, "--html", help="Pfad für die statische HTML-Coverage-Matrix."),
 ):
-    """Generate old-vs-new VIDIS migration coverage matrix."""
+    """Generate the VIDIS coverage and automation matrix."""
     written = write_coverage_matrix(json_path=output_json, html_path=output_html)
     for path in written:
         typer.echo(str(path))

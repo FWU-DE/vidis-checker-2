@@ -151,7 +151,38 @@ def _evidence_for_finding(
         visited = ipf.get("visited_urls") or []
         if visited:
             evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
+    _append_screenshot_evidence(evidence, raw_capture, finding.criterion)
     return evidence
+
+
+def _append_screenshot_evidence(evidence: list[EvidenceItem], raw_capture: dict[str, Any], criterion: str) -> None:
+    screenshots = raw_capture.get("screenshots") or []
+    if screenshots:
+        values = []
+        for screenshot in screenshots[:8]:
+            label = str(screenshot.get("label") or screenshot.get("filename") or "Screenshot")
+            filename = str(screenshot.get("filename") or "")
+            url = str(screenshot.get("url") or "")
+            local_note = " (lokal/authentifiziert)" if screenshot.get("local_only") else ""
+            link = f"[{label}]({filename})" if filename and not screenshot.get("local_only") else label
+            values.append(f"{link} — {url}{local_note}".strip())
+        if len(screenshots) > 8:
+            values.append(f"+{len(screenshots) - 8} weitere")
+        evidence.append(EvidenceItem("Screenshot-Nachweise", "; ".join(values)))
+    vision_reviews = raw_capture.get("vision_reviews") or []
+    matching_reviews = [
+        review
+        for review in vision_reviews
+        if not review.get("criterion_suggestions") or criterion in review.get("criterion_suggestions", [])
+    ]
+    if matching_reviews:
+        values = []
+        for review in matching_reviews[:8]:
+            label = str(review.get("label") or "Screenshot")
+            status = str(review.get("status") or "MANUELL")
+            note = str(review.get("note") or "—")
+            values.append(f"{label}: {status} — {note}")
+        evidence.append(EvidenceItem("Vision-Review", "; ".join(values)))
 
 
 def _api_signal_summary(items: list[dict[str, Any]], limit: int = 12) -> str:

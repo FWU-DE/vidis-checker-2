@@ -6,7 +6,7 @@ from pathlib import Path
 from vidis_compliance.coverage_matrix import (
     DEFAULT_COVERAGE_HTML,
     DEFAULT_COVERAGE_JSON,
-    LEGACY_FEATURE_AREAS,
+    PLATFORM_GAP_AREAS,
     build_coverage_matrix,
     write_coverage_matrix,
 )
@@ -25,24 +25,24 @@ def test_coverage_matrix_lists_every_registry_criterion_exactly_once() -> None:
     assert len(criterion_rows) == len(registry_codes)
 
 
-def test_coverage_matrix_includes_required_legacy_gap_rows() -> None:
+def test_coverage_matrix_includes_required_platform_gap_rows() -> None:
     matrix = build_coverage_matrix()
-    feature_codes = {row["code"] for row in matrix["rows"] if row["kind"] == "legacy_feature"}
+    feature_codes = {row["code"] for row in matrix["rows"] if row["kind"] == "platform_gap"}
 
-    assert set(LEGACY_FEATURE_AREAS) <= feature_codes
+    assert set(PLATFORM_GAP_AREAS) <= feature_codes
     for code in [
-        "LEGACY-AGENT-LOGIN-PERSONAS",
-        "LEGACY-SCREENSHOT-VISION",
-        "LEGACY-API-AUTH-JOBS-ZIP",
-        "LEGACY-FASTAPI-DOCUMENT-URLS",
-        "LEGACY-RDS-SPE-370-MAPPING",
+        "PLATFORM-AUTH-PERSONA-CRAWL",
+        "PLATFORM-SCREENSHOT-VISION",
+        "PLATFORM-API-AUTH-JOBS-ZIP",
+        "PLATFORM-FASTAPI-DOCUMENT-URLS",
+        "PLATFORM-RDS-SPE-370-STATUS",
     ]:
         row = next(row for row in matrix["rows"] if row["code"] == code)
-        assert row["new_platform_status"] in {"partial-migration", "not-migrated", "planned-gap", "resolved"}
+        assert row["implementation_status"] in {"partial", "not implemented", "planned", "resolved"}
         assert row["known_limitations"]
 
-    spe_row = next(row for row in matrix["rows"] if row["code"] == "LEGACY-RDS-SPE-370-MAPPING")
-    assert spe_row["new_platform_status"] == "partial-migration"
+    spe_row = next(row for row in matrix["rows"] if row["code"] == "PLATFORM-RDS-SPE-370-STATUS")
+    assert spe_row["implementation_status"] == "partial"
     assert "document classifier" in spe_row["automation_level"]
 
 
@@ -58,7 +58,7 @@ def test_write_coverage_matrix_outputs_html_and_json(tmp_path: Path) -> None:
     write_coverage_matrix(json_path=json_path, html_path=html_path)
 
     html = html_path.read_text(encoding="utf-8")
-    assert "VIDIS Migration Coverage Matrix" in html
-    assert "Old checker status" in html
+    assert "VIDIS Coverage Matrix" in html
+    assert "Platform status" in html
     assert "RDS-SPE-370" in html
     assert json_path.exists()

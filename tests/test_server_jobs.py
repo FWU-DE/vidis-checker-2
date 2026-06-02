@@ -74,6 +74,75 @@ def test_post_job_runs_code_check_and_exposes_result_artifact_and_reports(tmp_pa
     assert downloaded_pdf.content.startswith(b"%PDF")
 
 
+def test_job_exposes_public_screenshot_artifact_and_blocks_local_only_screenshot(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
+    public_screenshot = tmp_path / "public-page.png"
+    private_screenshot = tmp_path / "private-page.png"
+    public_screenshot.write_bytes(b"public-png")
+    private_screenshot.write_bytes(b"private-png")
+
+    class FakeCapture:
+        url = "https://example.test/"
+        cookies = []
+        scripts = []
+        requests = []
+        resources = []
+        links = []
+        visible_text = []
+        browser_signals = {}
+        local_storage = {}
+        session_storage = {}
+        visited_urls = ["https://example.test/"]
+        screenshots = [
+            {
+                "label": "public-page",
+                "url": "https://example.test/",
+                "filename": "public-page.png",
+                "path": str(public_screenshot),
+                "authenticated": False,
+                "local_only": False,
+            },
+            {
+                "label": "private-page",
+                "url": "https://example.test/account",
+                "filename": "private-page.png",
+                "path": str(private_screenshot),
+                "authenticated": True,
+                "local_only": True,
+            },
+        ]
+        vision_reviews = [
+            {
+                "label": "public-page",
+                "status": "MANUELL",
+                "note": "Vision-Review nicht konfiguriert; Screenshot manuell prüfen.",
+                "criterion_suggestions": [],
+            }
+        ]
+
+    monkeypatch.setattr(server.cli_module, "crawl", lambda *args, **kwargs: FakeCapture())
+    monkeypatch.setattr(server.cli_module, "check_site_transport", lambda url: [])
+    monkeypatch.setattr(server.cli_module, "analyze_ipf_site", lambda url: type("IpF", (), {"visited_urls": [], "impressum": type("Doc", (), {"url": None})(), "privacy": type("Doc", (), {"url": None})()})())
+    monkeypatch.setattr(server.cli_module, "findings_from_ipf_analysis", lambda analysis: [])
+    client = TestClient(server.app)
+
+    created = client.post("/jobs", json={"target_url": "https://example.test", "pages": 1})
+
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    completed = _wait_for_completed(client, job_id)
+    assert completed["status"] == "completed"
+    assert completed["artifacts"]["screenshot_public_page"].endswith(f"/jobs/{job_id}/artifacts/screenshots/public-page.png")
+    assert "screenshot_private_page" not in completed["artifacts"]
+
+    public_download = client.get(f"/jobs/{job_id}/artifacts/screenshots/public-page.png")
+    assert public_download.status_code == 200
+    assert public_download.content == b"public-png"
+
+    private_download = client.get(f"/jobs/{job_id}/artifacts/screenshots/private-page.png")
+    assert private_download.status_code == 404
+
+
 def test_post_job_returns_before_slow_scan_finishes(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
     release = threading.Event()

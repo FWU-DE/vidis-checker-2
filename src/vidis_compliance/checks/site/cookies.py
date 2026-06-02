@@ -32,7 +32,7 @@ def classify_cookies(
 ) -> Tuple[Status, str]:
     """
     RDS-CUC-371/372:
-    - RDS-CUC-371 identifies non-essential cookies via vidis-checker cookie_db.json.
+    - RDS-CUC-371 identifies non-essential cookies via the bundled cookie database.
     - RDS-CUC-372 maps Functional/Security categories to essential cookies and
       Analytics/Marketing categories to non-essential cookies.
     - Unknown cookies remain MANUELL because essentiality cannot be asserted.

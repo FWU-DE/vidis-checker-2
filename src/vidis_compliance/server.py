@@ -26,7 +26,7 @@ from .sources.documents.analyze import build_document_inputs
 app = FastAPI(title="VIDIS Compliance API")
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
-ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "job.json"}
+ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "agent_capture.json", "job.json"}
 ALLOWED_REPORTS = {"report.md", "report.pdf"}
 _STORE_LOCK = threading.Lock()
 _JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get("VIDIS_JOB_WORKERS", "4")))
@@ -42,6 +42,10 @@ class JobCreateRequest(BaseModel):
     avv_url: HttpUrl | None = None
     target_audience: Literal["SuS", "Lehrkraefte", "beide"] = "beide"
     pages: int = Field(default=8, ge=1, le=100)
+    agentic: bool = False
+    agent_tasks: list[Literal["legal", "student", "teacher", "register", "logout"]] = Field(default_factory=list)
+    agent_username: str | None = None
+    agent_password: str | None = Field(default=None, exclude=True, repr=False)
 
     @model_validator(mode="after")
     def require_target(self) -> "JobCreateRequest":
@@ -59,6 +63,8 @@ class JobCreateRequest(BaseModel):
             or self.avv_url
         ):
             raise ValueError("target_url, code_path, document_paths or document URL is required")
+        if self.agentic and not self.target_url:
+            raise ValueError("agentic mode requires target_url")
         return self
 
 
@@ -171,7 +177,7 @@ def get_job(job_id: str) -> JobMetadata:
     return _read_metadata(job_id)
 
 
-@app.get("/jobs/{job_id}/artifacts/{artifact_name}")
+@app.get("/jobs/{job_id}/artifacts/{artifact_name:path}")
 def get_artifact(job_id: str, artifact_name: str):
     path = _safe_named_file(job_id, artifact_name, ALLOWED_ARTIFACTS)
     if path.suffix == ".json":
@@ -242,7 +248,7 @@ def _run_job(job_id: str) -> None:
         metadata.updated_at = _now()
         _write_metadata(metadata)
 
-        result, raw_capture, code_capture, document_capture = _execute_check(job_id, metadata.request)
+        result, raw_capture, code_capture, document_capture, agent_capture = _execute_check(job_id, metadata.request)
         job_dir = _job_dir(job_id)
         (job_dir / "result.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
         if raw_capture is not None:
@@ -250,6 +256,7 @@ def _run_job(job_id: str) -> None:
                 json.dumps(raw_capture, ensure_ascii=False, indent=2, default=str),
                 encoding="utf-8",
             )
+            _copy_public_screenshots(job_id, raw_capture)
         if code_capture is not None:
             (job_dir / "code_capture.json").write_text(
                 json.dumps(code_capture, ensure_ascii=False, indent=2),
@@ -258,6 +265,11 @@ def _run_job(job_id: str) -> None:
         if document_capture is not None:
             (job_dir / "document_capture.json").write_text(
                 json.dumps(document_capture, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        if agent_capture is not None:
+            (job_dir / "agent_capture.json").write_text(
+                json.dumps(agent_capture, ensure_ascii=False, indent=2, default=str),
                 encoding="utf-8",
             )
         metadata.status = "completed"
@@ -271,7 +283,7 @@ def _run_job(job_id: str) -> None:
         _write_metadata(metadata)
 
 
-def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None, dict | None]:
+def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None, dict | None, dict | None]:
     crit = load_criteria()
     cfg = JobConfig(
         job_id=job_id,
@@ -284,10 +296,17 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
     raw_capture = None
     code_capture = None
     document_capture = None
+    agent_capture = None
 
-    if cfg.target_url:
-        cap = cli_module.crawl(cfg.target_url, pages=cfg.pages, headless=True)
-        raw_capture = cli_module.asdict(cap)
+    if cfg.target_url and not request.agentic:
+        cap = cli_module.crawl(
+            cfg.target_url,
+            pages=cfg.pages,
+            headless=True,
+            screenshot_dir=_job_dir(job_id) / "screenshots",
+        )
+        raw_capture = _capture_to_dict(cap)
+        raw_capture["vision_reviews"] = raw_capture.get("vision_reviews") or cli_module.review_screenshots(raw_capture.get("screenshots") or [])
         page_signals = {
             "cookies": cap.cookies,
             "scripts": cap.scripts,
@@ -324,11 +343,26 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
             by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
 
+    if request.agentic:
+        task_types = cli_module.normalize_agent_tasks(list(request.agent_tasks))
+        username = cli_module.resolve_secret(request.agent_username, "VIDIS_AGENT_USERNAME")
+        password = cli_module.resolve_secret(request.agent_password, "VIDIS_AGENT_PASSWORD")
+        agent_result = cli_module.DefaultAgenticRunner().run(
+            base_url=cfg.target_url or "",
+            task_types=task_types,
+            username=username,
+            password=password,
+            output_dir=_job_dir(job_id) / "agent",
+            persona=cfg.target_audience,
+            pages=cfg.pages,
+        )
+        agent_capture = cli_module.write_agentic_artifacts(agent_result, _job_dir(job_id) / "agent", [username, password])
+
     wired = {finding.criterion for finding in findings}
     for code in crit.items.keys():
         if code not in wired:
             findings.append(CheckFinding(criterion=code, status="MANUELL", note="Not yet implemented"))
-    return JobResult(job_id=job_id, findings=findings), raw_capture, code_capture, document_capture
+    return JobResult(job_id=job_id, findings=findings), raw_capture, code_capture, document_capture, agent_capture
 
 
 def _results_root() -> Path:
@@ -399,11 +433,15 @@ def _job_summary(metadata: JobMetadata) -> JobSummary:
 
 
 def _safe_named_file(job_id: str, name: str, allowed: set[str]) -> Path:
-    if name not in allowed or "/" in name or "\\" in name or ".." in name:
+    if "\\" in name or ".." in name:
+        raise HTTPException(status_code=404, detail="file not found")
+    if "/" not in name and name not in allowed:
+        raise HTTPException(status_code=404, detail="file not found")
+    if "/" in name and not name.startswith("screenshots/"):
         raise HTTPException(status_code=404, detail="file not found")
     path = (_job_dir(job_id) / name).resolve()
     job_dir = _job_dir(job_id).resolve()
-    if path.parent != job_dir or not path.exists():
+    if job_dir not in path.parents or not path.exists():
         raise HTTPException(status_code=404, detail="file not found")
     return path
 
@@ -414,7 +452,52 @@ def _artifact_urls(job_id: str) -> dict[str, str]:
         if (_job_dir(job_id) / name).exists():
             key = name.replace(".", "_")
             artifacts[key] = f"/jobs/{job_id}/artifacts/{name}"
+    screenshots_dir = _job_dir(job_id) / "screenshots"
+    if screenshots_dir.exists():
+        for path in sorted(screenshots_dir.glob("*.png")):
+            key = "screenshot_" + path.stem.replace("-", "_")
+            artifacts[key] = f"/jobs/{job_id}/artifacts/screenshots/{path.name}"
     return artifacts
+
+
+def _copy_public_screenshots(job_id: str, raw_capture: dict) -> None:
+    import shutil
+
+    screenshots = raw_capture.get("screenshots") or []
+    output_dir = _job_dir(job_id) / "screenshots"
+    for item in screenshots:
+        if item.get("local_only"):
+            continue
+        source = Path(str(item.get("path") or ""))
+        filename = str(item.get("filename") or source.name)
+        if not filename or not source.exists():
+            continue
+        output_dir.mkdir(parents=True, exist_ok=True)
+        target = output_dir / filename
+        if source.resolve() != target.resolve():
+            shutil.copyfile(source, target)
+
+
+def _capture_to_dict(capture) -> dict:
+    try:
+        return cli_module.asdict(capture)
+    except TypeError:
+        keys = (
+            "url",
+            "cookies",
+            "local_storage",
+            "session_storage",
+            "scripts",
+            "requests",
+            "resources",
+            "links",
+            "visible_text",
+            "browser_signals",
+            "visited_urls",
+            "screenshots",
+            "vision_reviews",
+        )
+        return {key: getattr(capture, key) for key in keys if hasattr(capture, key)}
 
 
 def _load_optional_json(path: Path) -> dict | None:

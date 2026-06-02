@@ -4,6 +4,7 @@ import random
 from collections import deque
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Sequence
 from urllib.parse import urldefrag, urljoin, urlparse
 
@@ -159,6 +160,8 @@ class PageCapture:
     visible_text: List[str] = field(default_factory=list)
     browser_signals: dict[str, list[dict]] = field(default_factory=dict)
     visited_urls: List[str] = field(default_factory=list)
+    screenshots: List[dict] = field(default_factory=list)
+    vision_reviews: List[dict] = field(default_factory=list)
 
 
 def _clean_internal_url(base_url: str, href: str | None) -> str | None:
@@ -239,6 +242,8 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
             visible_text=[],
             browser_signals={},
             visited_urls=[],
+            screenshots=[],
+            vision_reviews=[],
         )
 
     cookies_by_key: dict[tuple[str, str, str, str], dict] = {}
@@ -254,6 +259,8 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
         "device_storage": {},
     }
     visited_urls: list[str] = []
+    screenshots: list[dict] = []
+    vision_reviews: list[dict] = []
 
     for capture in captures:
         visited_urls.append(capture.url)
@@ -266,6 +273,8 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
         resources.extend(capture.resources)
         links.extend(capture.links)
         visible_text.extend(capture.visible_text)
+        screenshots.extend(capture.screenshots)
+        vision_reviews.extend(capture.vision_reviews)
         for group, items in (capture.browser_signals or {}).items():
             group_counts = browser_signal_counts.setdefault(group, {})
             for item in items:
@@ -295,6 +304,8 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
         visible_text=_dedupe_sorted(visible_text),
         browser_signals=browser_signals,
         visited_urls=list(dict.fromkeys(visited_urls)),
+        screenshots=_dedupe_dicts(screenshots, ("filename", "path")),
+        vision_reviews=_dedupe_dicts(vision_reviews, ("label", "note")),
     )
 
 
@@ -325,6 +336,9 @@ def _capture_page(
     requests: list[str],
     consent_hook: ConsentHook | None = None,
     request_start: int = 0,
+    screenshot_dir: Path | None = None,
+    screenshot_index: int | None = None,
+    authenticated: bool = False,
 ) -> PageCapture:
     page.add_init_script(JS_BROWSER_SIGNAL_INSTALL)
     page.goto(url, wait_until="load", timeout=30000)
@@ -343,6 +357,23 @@ def _capture_page(
     visible_text = page.evaluate(JS_VISIBLE_TEXT)
     browser_signals = page.evaluate(JS_BROWSER_SIGNALS)
     scripts = [r["url"] for r in resources if r.get("type") == "script"]
+    screenshots: list[dict] = []
+    if screenshot_dir is not None:
+        label = f"page-{screenshot_index or 1}"
+        filename = f"{label}.png"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = screenshot_dir / filename
+        page.screenshot(path=str(screenshot_path), full_page=True)
+        screenshots.append(
+            {
+                "label": label,
+                "url": page.url,
+                "filename": filename,
+                "path": str(screenshot_path),
+                "authenticated": bool(authenticated),
+                "local_only": bool(authenticated),
+            }
+        )
     return PageCapture(
         url=page.url,
         cookies=cookies,
@@ -354,6 +385,7 @@ def _capture_page(
         links=links,
         visible_text=visible_text,
         browser_signals=browser_signals,
+        screenshots=screenshots,
     )
 
 
@@ -379,6 +411,7 @@ def crawl(
     headless: bool = True,
     seed: int = 0,
     consent_hook: ConsentHook | None = None,
+    screenshot_dir: str | Path | None = None,
 ) -> PageCapture:
     """Crawl up to ``pages`` same-origin pages and aggregate browser signals.
 
@@ -390,6 +423,7 @@ def crawl(
     start_url = _normalize_url(url)
     rng = random.Random(seed)
     hook = consent_hook or _default_consent_hook
+    screenshot_path = Path(screenshot_dir) if screenshot_dir is not None else None
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
@@ -417,6 +451,8 @@ def crawl(
                     requests=request_log,
                     consent_hook=hook,
                     request_start=request_start,
+                    screenshot_dir=screenshot_path,
+                    screenshot_index=len(captures) + 1,
                 )
                 captures.append(capture)
 

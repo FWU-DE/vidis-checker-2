@@ -87,6 +87,43 @@ def test_generate_markdown_lists_browser_signal_evidence_without_storage_values(
     assert "large-secret-value" not in text
 
 
+def test_generate_markdown_lists_screenshot_evidence_and_vision_manual_notes(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[CheckFinding(criterion="RDS-IPF-364", status="MANUELL", note="Visuelle Link-Prominenz prüfen")],
+    )
+    screenshot = tmp_path / "page-1.png"
+    screenshot.write_bytes(b"fixture")
+    raw_capture = {
+        "screenshots": [
+            {
+                "label": "page-1",
+                "url": "https://example.test/",
+                "filename": "page-1.png",
+                "path": str(screenshot),
+                "authenticated": False,
+                "local_only": False,
+            }
+        ],
+        "vision_reviews": [
+            {
+                "label": "page-1",
+                "status": "MANUELL",
+                "note": "Vision-Review nicht konfiguriert; Screenshot manuell prüfen.",
+                "criterion_suggestions": ["RDS-IPF-364"],
+            }
+        ],
+    }
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture=raw_capture)
+
+    text = output.read_text(encoding="utf-8")
+    assert "| Screenshot-Nachweise | [page-1](page-1.png) — https://example.test/ |" in text
+    assert "| Vision-Review | page-1: MANUELL — Vision-Review nicht konfiguriert; Screenshot manuell prüfen. |" in text
+    assert b"fixture" not in text.encode("utf-8")
+
+
 def test_generate_pdf_writes_non_empty_report(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",

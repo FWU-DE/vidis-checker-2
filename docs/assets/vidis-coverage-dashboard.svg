@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">VIDIS Coverage Dashboard</title>
+  <desc id="desc">Illustrative screenshot of the VIDIS coverage dashboard showing criteria, automation level and evidence artifacts.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="1" stop-color="#172554"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="760" fill="url(#bg)"/>
+  <text x="72" y="84" fill="#eff6ff" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="42" font-weight="700">Coverage &amp; Automation Dashboard</text>
+  <text x="74" y="124" fill="#bfdbfe" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20">Welche Kriterien sind automatisiert, welche benötigen Review?</text>
+  <g transform="translate(72 164)" filter="url(#shadow)">
+    <rect width="1136" height="522" rx="20" fill="#0f172a" stroke="#334155"/>
+    <g transform="translate(32 30)" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+      <rect width="210" height="44" rx="22" fill="#0ea5e9" opacity="0.18" stroke="#38bdf8"/>
+      <text x="22" y="29" fill="#bae6fd" font-size="17" font-weight="700">26 Kriterien</text>
+      <rect x="232" width="240" height="44" rx="22" fill="#22c55e" opacity="0.15" stroke="#4ade80"/>
+      <text x="254" y="29" fill="#bbf7d0" font-size="17" font-weight="700">Automationsstatus</text>
+      <rect x="494" width="250" height="44" rx="22" fill="#f59e0b" opacity="0.15" stroke="#fbbf24"/>
+      <text x="516" y="29" fill="#fde68a" font-size="17" font-weight="700">Known limitations</text>
+    </g>
+    <g transform="translate(32 104)" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16">
+      <rect width="1072" height="44" fill="#1e293b"/>
+      <text x="18" y="28" fill="#93c5fd" font-weight="700">Code</text>
+      <text x="168" y="28" fill="#93c5fd" font-weight="700">Status</text>
+      <text x="380" y="28" fill="#93c5fd" font-weight="700">Input</text>
+      <text x="676" y="28" fill="#93c5fd" font-weight="700">Evidence</text>
+      <g transform="translate(0 58)">
+        <rect width="1072" height="54" fill="#0b1220"/>
+        <text x="18" y="34" fill="#bae6fd" font-family="SFMono-Regular, Menlo, monospace">ITS-ENC-359</text>
+        <text x="168" y="34" fill="#22c55e" font-weight="700">automated</text>
+        <text x="380" y="34" fill="#cbd5e1">target URL</text>
+        <text x="676" y="34" fill="#cbd5e1">result.json, capture.json, report.pdf</text>
+      </g>
+      <g transform="translate(0 116)">
+        <rect width="1072" height="54" fill="#101827"/>
+        <text x="18" y="34" fill="#bae6fd" font-family="SFMono-Regular, Menlo, monospace">RDS-CUC-376</text>
+        <text x="168" y="34" fill="#f59e0b" font-weight="700">partial</text>
+        <text x="380" y="34" fill="#cbd5e1">URL + context review</text>
+        <text x="676" y="34" fill="#cbd5e1">browser signals, manual decision</text>
+      </g>
+      <g transform="translate(0 174)">
+        <rect width="1072" height="54" fill="#0b1220"/>
+        <text x="18" y="34" fill="#bae6fd" font-family="SFMono-Regular, Menlo, monospace">RDS-SPE-370</text>
+        <text x="168" y="34" fill="#f59e0b" font-weight="700">manual</text>
+        <text x="380" y="34" fill="#cbd5e1">product documentation</text>
+        <text x="676" y="34" fill="#cbd5e1">report note, reviewer evidence</text>
+      </g>
+      <g transform="translate(0 232)">
+        <rect width="1072" height="54" fill="#101827"/>
+        <text x="18" y="34" fill="#bae6fd" font-family="SFMono-Regular, Menlo, monospace">API-ZIP</text>
+        <text x="168" y="34" fill="#ef4444" font-weight="700">planned</text>
+        <text x="380" y="34" fill="#cbd5e1">deployment policy</text>
+        <text x="676" y="34" fill="#cbd5e1">future archive.zip</text>
+      </g>
+    </g>
+  </g>
+</svg>

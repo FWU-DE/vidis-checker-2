@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from vidis_compliance.sources.site.crawl import (
     PageCapture,
     _capture_page,
@@ -28,6 +30,10 @@ class FakePage:
 
     def add_init_script(self, script):
         self.events.append(("init_script", "__vidisSignals" in script))
+
+    def screenshot(self, path, full_page):
+        self.events.append(("screenshot", str(path), full_page))
+        Path(path).write_bytes(b"fixture-png")
 
     def evaluate(self, script):
         if "__vidisSignals" in script:
@@ -83,7 +89,7 @@ def test_discover_internal_links_keeps_same_origin_absolute_relative_and_sorted_
     ]
 
 
-def test_aggregate_captures_deduplicates_cookies_storage_scripts_and_requests():
+def test_aggregate_captures_deduplicates_cookies_storage_scripts_requests_and_screenshots():
     captures = [
         PageCapture(
             url="https://example.test/",
@@ -98,6 +104,16 @@ def test_aggregate_captures_deduplicates_cookies_storage_scripts_and_requests():
                 "fingerprinting": [{"api": "canvas.toDataURL", "count": 1}],
                 "device_storage": [{"api": "indexedDB.open", "count": 1}],
             },
+            screenshots=[
+                {
+                    "label": "page-1",
+                    "url": "https://example.test/",
+                    "filename": "page-1.png",
+                    "path": "/tmp/page-1.png",
+                    "authenticated": False,
+                    "local_only": False,
+                }
+            ],
         ),
         PageCapture(
             url="https://example.test/about",
@@ -124,6 +140,16 @@ def test_aggregate_captures_deduplicates_cookies_storage_scripts_and_requests():
                     {"api": "serviceWorker.register", "count": 1},
                 ],
             },
+            screenshots=[
+                {
+                    "label": "page-2",
+                    "url": "https://example.test/about",
+                    "filename": "page-2.png",
+                    "path": "/tmp/page-2.png",
+                    "authenticated": True,
+                    "local_only": True,
+                }
+            ],
         ),
     ]
 
@@ -156,6 +182,24 @@ def test_aggregate_captures_deduplicates_cookies_storage_scripts_and_requests():
             {"api": "serviceWorker.register", "count": 1},
         ],
     }
+    assert aggregate.screenshots == [
+        {
+            "label": "page-1",
+            "url": "https://example.test/",
+            "filename": "page-1.png",
+            "path": "/tmp/page-1.png",
+            "authenticated": False,
+            "local_only": False,
+        },
+        {
+            "label": "page-2",
+            "url": "https://example.test/about",
+            "filename": "page-2.png",
+            "path": "/tmp/page-2.png",
+            "authenticated": True,
+            "local_only": True,
+        },
+    ]
 
 
 def test_capture_page_runs_consent_hook_before_collecting_browser_state():
@@ -200,3 +244,28 @@ def test_capture_page_runs_consent_hook_before_collecting_browser_state():
     ]
     assert capture.visible_text == ["Anzeige: Lernspiel gesponsert von ExampleCo"]
 
+
+def test_capture_page_records_screenshot_metadata_without_embedding_image_bytes(tmp_path: Path):
+    page = FakePage()
+
+    capture = _capture_page(
+        page,
+        FakeContext(),
+        "https://example.test/landing?token=secret#frag",
+        requests=[],
+        screenshot_dir=tmp_path,
+        screenshot_index=3,
+    )
+
+    assert capture.screenshots == [
+        {
+            "label": "page-3",
+            "url": "https://example.test/landing?token=secret#frag",
+            "filename": "page-3.png",
+            "path": str(tmp_path / "page-3.png"),
+            "authenticated": False,
+            "local_only": False,
+        }
+    ]
+    assert (tmp_path / "page-3.png").read_bytes() == b"fixture-png"
+    assert ("screenshot", str(tmp_path / "page-3.png"), True) in page.events

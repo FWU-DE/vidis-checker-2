@@ -15,8 +15,8 @@ DEFAULT_COVERAGE_HTML = REPO_ROOT / "docs" / "results" / "coverage_matrix.html"
 COLUMNS = [
     "code",
     "name",
-    "old_checker_status",
-    "new_platform_status",
+    "platform_status",
+    "implementation_status",
     "input_needed",
     "automation_level",
     "evidence_artifacts",
@@ -24,56 +24,56 @@ COLUMNS = [
     "known_limitations",
 ]
 
-LEGACY_FEATURE_AREAS: dict[str, dict[str, str]] = {
-    "LEGACY-AGENT-LOGIN-PERSONAS": {
+PLATFORM_GAP_AREAS: dict[str, dict[str, str]] = {
+    "PLATFORM-AUTH-PERSONA-CRAWL": {
         "name": "Agent login and persona based flows",
-        "old_checker_status": "available in legacy checker/browser agent concept",
-        "new_platform_status": "not-migrated",
+        "platform_status": "planned capability",
+        "implementation_status": "not implemented",
         "input_needed": "Human-operated credentials, role/persona definitions, tenant-specific login steps.",
         "automation_level": "manual gap",
         "evidence_artifacts": "None yet; future artifact should capture authenticated journey transcript.",
         "cli_api_availability": "No CLI/API endpoint currently accepts login personas.",
         "known_limitations": "Authenticated checks are intentionally not automated until credential handling, consent, and replay safety are designed.",
     },
-    "LEGACY-SCREENSHOT-VISION": {
+    "PLATFORM-SCREENSHOT-VISION": {
         "name": "Screenshot and visual inspection",
-        "old_checker_status": "partially available through browser screenshots/vision review",
-        "new_platform_status": "partial-migration",
+        "platform_status": "planned capability",
+        "implementation_status": "partial",
         "input_needed": "Target URL and pages; optional visual review prompt is still external.",
         "automation_level": "browser capture automated, vision judgement manual",
         "evidence_artifacts": "capture.json contains DOM/network/browser signals; screenshots are not yet first-class report artifacts.",
         "cli_api_availability": "CLI site crawl exists; API jobs exist for submitted checks, but no dedicated screenshot export route.",
         "known_limitations": "Visual-only claims such as banner prominence or deceptive layouts still require human review.",
     },
-    "LEGACY-API-AUTH-JOBS-ZIP": {
+    "PLATFORM-API-AUTH-JOBS-ZIP": {
         "name": "API authentication, job list, and ZIP artifact download",
-        "old_checker_status": "legacy operator workflow expected protected API/artifact access",
-        "new_platform_status": "partial-migration",
+        "platform_status": "automation hardening",
+        "implementation_status": "partial",
         "input_needed": "API deployment policy, auth mechanism, artifact retention, and ZIP manifest requirements.",
         "automation_level": "job creation automated, ops hardening open",
         "evidence_artifacts": "result.json, capture.json, code_capture.json, document_capture.json, report PDFs/Markdown.",
         "cli_api_availability": "FastAPI async job endpoints exist; auth, list filtering, and ZIP bundle endpoint are not complete.",
         "known_limitations": "Do not expose the current API beyond trusted local/internal contexts without auth and artifact access controls.",
     },
-    "LEGACY-FASTAPI-DOCUMENT-URLS": {
+    "PLATFORM-FASTAPI-DOCUMENT-URLS": {
         "name": "FastAPI document URL ingestion",
-        "old_checker_status": "document URLs were part of the migration requirement set",
-        "new_platform_status": "partial-migration",
+        "platform_status": "automation parity",
+        "implementation_status": "partial",
         "input_needed": "AGB, privacy, and AVV URLs or local server-side document files.",
         "automation_level": "CLI/API automated for local documents and HTTP(S) document URLs",
         "evidence_artifacts": "document_capture.json and criterion notes from document analysis.",
         "cli_api_availability": "CLI supports --agb-url, --privacy-url, --avv-url, and --document; FastAPI accepts document_paths plus agb_url, privacy_url, and avv_url.",
         "known_limitations": "Remote document fetches are limited to HTTP(S); local document paths must exist on the API server.",
     },
-    "LEGACY-RDS-SPE-370-MAPPING": {
+    "PLATFORM-RDS-SPE-370-STATUS": {
         "name": "RDS-SPE-370 criterion mapping",
-        "old_checker_status": "legacy/spec comparison identified a mapping question",
-        "new_platform_status": "partial-migration",
+        "platform_status": "criterion status",
+        "implementation_status": "partial",
         "input_needed": "AGB/privacy/AVV document files or URLs.",
         "automation_level": "conservative document classifier plus manual fallback",
         "evidence_artifacts": "result.json, Markdown/PDF report, document_capture.json.",
         "cli_api_availability": "RDS-SPE-370 is now in the active registry and emitted by document analysis for CLI/API result output.",
-        "known_limitations": "PASS/FAIL requires explicit Sponsoring/economic-interest evidence; absence remains MANUELL because the old checker also relied on semantic AGB review.",
+        "known_limitations": "PASS/FAIL requires explicit Sponsoring/economic-interest evidence; absence remains MANUELL because semantic AGB review is inherently context-sensitive.",
     },
 }
 
@@ -138,8 +138,9 @@ def build_coverage_matrix() -> dict[str, Any]:
                 "code": code,
                 "name": criterion.name,
                 "area": criterion.area,
-                "old_checker_status": _old_checker_status(code),
-                "new_platform_status": _new_platform_status(code, sources),
+                "platform_status": _platform_status(code),
+                "implementation_status": _implementation_status(code, sources),
+                "new_platform_status": _implementation_status(code, sources),
                 "input_needed": _input_needed(code, sources),
                 "automation_level": _automation_level(code, sources),
                 "evidence_artifacts": _evidence_artifacts(code, sources),
@@ -147,10 +148,10 @@ def build_coverage_matrix() -> dict[str, Any]:
                 "known_limitations": _known_limitations(code, sources),
             }
         )
-    for code, row in LEGACY_FEATURE_AREAS.items():
-        rows.append({"kind": "legacy_feature", "code": code, "area": "legacy", **row})
+    for code, row in PLATFORM_GAP_AREAS.items():
+        rows.append({"kind": "platform_gap", "code": code, "area": "platform", **row})
     return {
-        "title": "VIDIS Migration Coverage Matrix",
+        "title": "VIDIS Coverage Matrix",
         "generated_at": generated_at,
         "criteria_registry": "src/vidis_compliance/criteria/vidis_v0_2.yaml",
         "columns": COLUMNS,
@@ -174,7 +175,7 @@ def write_coverage_matrix(
 def render_coverage_html(matrix: dict[str, Any]) -> str:
     rows = matrix["rows"]
     criterion_count = sum(1 for row in rows if row["kind"] == "criterion")
-    legacy_count = sum(1 for row in rows if row["kind"] == "legacy_feature")
+    gap_count = sum(1 for row in rows if row["kind"] == "platform_gap")
     body_rows = "\n".join(_render_row(row) for row in rows)
     generated = html.escape(str(matrix["generated_at"]))
     return f"""<!doctype html>
@@ -182,7 +183,7 @@ def render_coverage_html(matrix: dict[str, Any]) -> str:
 <head>
   <meta charset=\"utf-8\">
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-  <title>VIDIS Migration Coverage Matrix</title>
+  <title>VIDIS Coverage Matrix</title>
   <style>
     :root {{ color-scheme: light dark; --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#94a3b8; --line:#334155; --accent:#38bdf8; }}
     body {{ margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; background:var(--bg); color:var(--text); }}
@@ -195,7 +196,7 @@ def render_coverage_html(matrix: dict[str, Any]) -> str:
     table {{ width:100%; border-collapse:collapse; min-width:1300px; }}
     th, td {{ border-bottom:1px solid var(--line); padding:10px; text-align:left; vertical-align:top; font-size:.92rem; }}
     th {{ position:sticky; top:0; background:#0f172a; color:var(--accent); z-index:1; }}
-    tr.kind-legacy_feature {{ background:rgba(245,158,11,.10); }}
+    tr.kind-platform_gap {{ background:rgba(245,158,11,.10); }}
     code {{ color:#bae6fd; white-space:nowrap; }}
     .muted {{ color:var(--muted); }}
     @media (prefers-color-scheme: light) {{ :root {{ --bg:#f8fafc; --panel:#ffffff; --text:#0f172a; --muted:#475569; --line:#cbd5e1; }} th {{ background:#e0f2fe; }} code {{ color:#0369a1; }} }}
@@ -204,17 +205,17 @@ def render_coverage_html(matrix: dict[str, Any]) -> str:
 <body>
   <header>
     <p class=\"muted\">Generated {generated}</p>
-    <h1>VIDIS Migration Coverage Matrix</h1>
-    <p class=\"lead\">Operator-facing old-vs-new coverage inventory for every active VIDIS criterion and migrated legacy feature area. The JSON sibling file is machine-readable; this page is the easy-to-open dashboard.</p>
+    <h1>VIDIS Coverage Matrix</h1>
+    <p class=\"lead\">Operator-facing coverage inventory for every active VIDIS criterion and platform capability area. The JSON sibling file is machine-readable; this page is the easy-to-open dashboard.</p>
     <div class=\"summary\">
       <span class=\"pill\">{criterion_count} registry criteria</span>
-      <span class=\"pill\">{legacy_count} legacy feature/gap rows</span>
+      <span class=\"pill\">{gap_count} platform gap rows</span>
       <span class=\"pill\">Source: src/vidis_compliance/criteria/vidis_v0_2.yaml</span>
     </div>
   </header>
   <main>
     <div class=\"table-wrap\">
-      <table aria-label=\"VIDIS migration coverage matrix\">
+      <table aria-label=\"VIDIS coverage matrix\">
         <thead><tr>{''.join(f'<th>{html.escape(_heading(column))}</th>' for column in COLUMNS)}</tr></thead>
         <tbody>
 {body_rows}
@@ -242,8 +243,8 @@ def _heading(column: str) -> str:
     return {
         "code": "Code/area",
         "name": "Name",
-        "old_checker_status": "Old checker status",
-        "new_platform_status": "New platform status",
+        "platform_status": "Platform status",
+        "implementation_status": "Implementation status",
         "input_needed": "Input needed",
         "automation_level": "Automation level",
         "evidence_artifacts": "Evidence artifacts",
@@ -263,23 +264,21 @@ def _sources_for(code: str) -> set[str]:
     return sources
 
 
-def _old_checker_status(code: str) -> str:
+def _platform_status(code: str) -> str:
     if code.startswith("RDS-CUC"):
-        return "migrated/extended from legacy browser and cookie checks"
+        return "browser and cookie checks"
     if code.startswith("ITS-ENC"):
-        return "extended beyond legacy with live transport/TLS checks"
+        return "transport/TLS checks"
     if code.startswith("RDS-IPF"):
-        return "extended beyond legacy with live legal-page discovery"
-    if code.startswith(("RDS-AGB", "RDS-DEV", "RDS-DSO")):
-        return "new document-analysis coverage from migration gap list"
-    if code == "RDS-SPE-370":
-        return "migrated from legacy terms-of-use/AGB semantic check"
+        return "legal-page discovery"
+    if code.startswith(("RDS-AGB", "RDS-DEV", "RDS-DSO", "RDS-SPE")):
+        return "document analysis"
     if code.startswith(("RDS-WER", "RDS-VIN")):
-        return "new site-signal coverage from migration gap list"
-    return "covered as registry/manual inventory item"
+        return "site-signal checks"
+    return "registry/manual inventory"
 
 
-def _new_platform_status(code: str, sources: set[str]) -> str:
+def _implementation_status(code: str, sources: set[str]) -> str:
     if not sources:
         return "manual-inventory"
     if code in _MANUAL_OVERLAY:

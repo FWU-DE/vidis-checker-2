@@ -15,7 +15,7 @@ NON_ESSENTIAL_CATEGORIES = {"Analytics", "Marketing"}
 
 @dataclass(frozen=True)
 class CookieInfo:
-    """Cookie metadata loaded from vidis-checker's cookie_db.json."""
+    """Cookie metadata loaded from the bundled cookie database."""
 
     id: str
     category: str
@@ -30,7 +30,7 @@ class CookieInfo:
 
 
 class CookieDatabase:
-    """Lookup adapter for vidis-checker cookie_db.json."""
+    """Lookup adapter for the bundled cookie database."""
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.db_path = Path(db_path) if db_path is not None else None

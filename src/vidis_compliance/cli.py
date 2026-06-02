@@ -20,6 +20,13 @@ from .checks.site.cookies import (
 from .checks.site.basic_http import check_site_transport
 from .checks.site.ipf import analyze_ipf_site, findings_from_ipf_analysis
 from .sources.site.crawl import crawl
+from .sources.site.vision import review_screenshots
+from .sources.agentic import (
+    DefaultAgenticRunner,
+    normalize_agent_tasks,
+    resolve_secret,
+    write_agentic_artifacts,
+)
 from .sources.code.inspect import inspect_code_path
 from .sources.documents.analyze import analyze_documents, build_document_inputs
 from .report.markdown import generate_markdown
@@ -53,6 +60,11 @@ def check(
     agb_url: str | None = typer.Option(None, "--agb-url", help="URL zu AGB/Nutzungsbedingungen."),
     privacy_url: str | None = typer.Option(None, "--privacy-url", help="URL zur Datenschutzerklärung."),
     avv_url: str | None = typer.Option(None, "--avv-url", help="URL zum AVV/Auftragsverarbeitungsvertrag."),
+    agentic: bool = typer.Option(False, "--agentic", help="Optionalen authentifizierten Agent-/Persona-Crawl aktivieren."),
+    agent_tasks: list[str] | None = typer.Option(None, "--agent-task", help="Agent-Task: legal, student, teacher, register oder logout. Wiederholbar."),
+    agent_persona: str | None = typer.Option(None, "--agent-persona", help="Persona für Agent-Crawl, z. B. SuS oder Lehrkraefte."),
+    agent_username: str | None = typer.Option(None, "--agent-username", envvar="VIDIS_AGENT_USERNAME", help="Login-Benutzername; alternativ VIDIS_AGENT_USERNAME."),
+    agent_password: str | None = typer.Option(None, "--agent-password", envvar="VIDIS_AGENT_PASSWORD", help="Login-Passwort; alternativ VIDIS_AGENT_PASSWORD."),
 ):
     """Run unified VIDIS checks (site and/or code)."""
     crit = load_criteria()
@@ -62,10 +74,18 @@ def check(
     raw_capture = None
     code_capture = None
     document_capture = None
+    agent_capture = None
     # Browser capture for cookie/storage-related VIDIS criteria.
-    if url:
-        cap = crawl(url, pages=pages, headless=True)
+    if url and not agentic:
+        outdir = Path("results") / cfg.job_id
+        try:
+            cap = crawl(url, pages=pages, headless=True, screenshot_dir=outdir / "screenshots")
+        except TypeError as exc:
+            if "screenshot_dir" not in str(exc):
+                raise
+            cap = crawl(url, pages=pages, headless=True)
         raw_capture = asdict(cap)
+        raw_capture["vision_reviews"] = review_screenshots(raw_capture.get("screenshots") or [])
         page_signals = {
             "cookies": cap.cookies,
             "scripts": cap.scripts,
@@ -119,6 +139,26 @@ def check(
         for finding in document_findings:
             by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
+    if agentic:
+        if not url:
+            raise typer.BadParameter("--agentic requires --url")
+        try:
+            task_types = normalize_agent_tasks(agent_tasks)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        outdir = Path("results") / cfg.job_id
+        username = resolve_secret(agent_username, "VIDIS_AGENT_USERNAME")
+        password = resolve_secret(agent_password, "VIDIS_AGENT_PASSWORD")
+        agent_result = DefaultAgenticRunner().run(
+            base_url=url,
+            task_types=task_types,
+            username=username,
+            password=password,
+            output_dir=outdir / "agent",
+            persona=agent_persona or audience,
+            pages=pages,
+        )
+        agent_capture = write_agentic_artifacts(agent_result, outdir / "agent", [username, password])
     wired = {f.criterion for f in findings}
     for k in crit.items.keys():
         if k not in wired:
@@ -134,6 +174,8 @@ def check(
         (outdir / "code_capture.json").write_text(json.dumps(code_capture, ensure_ascii=False, indent=2), encoding="utf-8")
     if document_capture is not None:
         (outdir / "document_capture.json").write_text(json.dumps(document_capture, ensure_ascii=False, indent=2), encoding="utf-8")
+    if agent_capture is not None:
+        (outdir / "agent_capture.json").write_text(json.dumps(agent_capture, ensure_ascii=False, indent=2), encoding="utf-8")
     if output_pdf:
         pdf_path = Path(output_pdf)
         pdf_path.parent.mkdir(parents=True, exist_ok=True)

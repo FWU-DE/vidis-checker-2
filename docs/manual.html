@@ -204,6 +204,7 @@
     <div class="inner">
       <a href="#setup">Setup</a>
       <a href="#cli">CLI</a>
+      <a href="#agentic">Agent-Mode</a>
       <a href="#reports">Reports</a>
       <a href="#coverage">Coverage Matrix</a>
       <a href="#api">FastAPI</a>
@@ -219,7 +220,7 @@
       <pre><code>cd /path/to/vidis-compliance
 uv sync
 uv run pytest -q</code></pre>
-      <p class="note">Für lokale Entwicklung im Jan-Setup liegt das Repo unter <code>/Users/janrenz/code/vidis-compliance</code>. Das Tool schreibt Ergebnisse standardmäßig nach <code>results/&lt;job_id&gt;/</code>.</p>
+      <p class="note">Das Tool schreibt Ergebnisse standardmäßig nach <code>results/&lt;job_id&gt;/</code>. Veröffentliche nur Artefakte, die keine Zugangsdaten oder personenbezogenen Testdaten enthalten.</p>
     </section>
 
     <section id="cli">
@@ -261,10 +262,42 @@ uv run pytest -q</code></pre>
           <tr><td><code>--md</code>, <code>--pdf</code></td><td>Direkte Report-Ausgabe als Markdown/PDF.</td></tr>
         </tbody>
       </table>
+      <h3>Beispielansichten</h3>
+      <div class="grid">
+        <figure class="card">
+          <img src="assets/vidis-cli-run.svg" alt="Beispielhafte CLI-Ausgabe mit PASS, FAIL und MANUELL Status" style="width:100%; border-radius:16px; border:1px solid var(--line); background:#07111f;">
+          <figcaption>CLI-Lauf mit erzeugten Evidence- und Report-Artefakten.</figcaption>
+        </figure>
+        <figure class="card">
+          <img src="assets/vidis-coverage-dashboard.svg" alt="Beispielhaftes Coverage Dashboard mit Kriterienstatus und Evidence-Spalten" style="width:100%; border-radius:16px; border:1px solid var(--line); background:#07111f;">
+          <figcaption>Coverage-Übersicht für Automationsgrad, benötigte Inputs und bekannte Grenzen.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="agentic">
+      <h2>3. Authentifizierter Agent-/Persona-Crawl</h2>
+      <p><code>--agentic</code> ist bewusst opt-in. Nutze diesen Modus, wenn eine Anwendung erst nach VIDIS-/Landesportal-Login relevante Bereiche zeigt: rechtliche Seiten nach Login, Schüler-/Lehrer-Dashboards, Registrierung oder Logout-Verhalten.</p>
+      <pre><code>VIDIS_AGENT_USERNAME='user@example.test' \
+VIDIS_AGENT_PASSWORD='***' \
+uv run vidis check \
+  --url https://app.example.test \
+  --agentic \
+  --agent-task legal \
+  --agent-task student \
+  --agent-persona SuS \
+  --output auth-scan</code></pre>
+      <ul>
+        <li>Unterstützte Tasks: <code>legal</code>, <code>student</code>, <code>teacher</code>, <code>register</code>, <code>logout</code>.</li>
+        <li>Credentials kommen aus <code>--agent-username</code>/<code>--agent-password</code> oder <code>VIDIS_AGENT_USERNAME</code>/<code>VIDIS_AGENT_PASSWORD</code>.</li>
+        <li>Passwörter und tokenartige Felder werden aus JSON-Artefakten und Traces entfernt (<code>***REDACTED***</code>).</li>
+        <li>Artefakte liegen unter <code>results/&lt;job_id&gt;/agent/</code>: <code>agent_capture.json</code>, <code>step_result.jsonl</code>, <code>screenshots/</code> und <code>pdfs/</code>.</li>
+      </ul>
+      <p class="note">Agent-Mode ersetzt die deterministische Prüfung nicht. Er liefert zusätzliche Evidenz für gated App-Bereiche und kann je nach Login/Captcha/SSO menschliche Nachprüfung erfordern.</p>
     </section>
 
     <section id="reports">
-      <h2>3. Reports aus bestehenden Ergebnissen erzeugen</h2>
+      <h2>4. Reports aus bestehenden Ergebnissen erzeugen</h2>
       <p>Wenn bereits ein <code>result.json</code> existiert, erzeugt <code>vidis-report</code> daraus einen deutschen Markdown- oder PDF-Bericht.</p>
       <pre><code>uv run vidis-report \
   --input results/example-full/result.json \
@@ -275,17 +308,17 @@ uv run pytest -q</code></pre>
     </section>
 
     <section id="coverage">
-      <h2>4. Migration Coverage Matrix</h2>
-      <p>Die statische Matrix zeigt für jedes aktive VIDIS-Kriterium und jede Legacy-Feature-Area, ob der alte Checker ersetzt, erweitert, nur teilweise migriert oder bewusst noch manuell ist.</p>
+      <h2>5. Coverage Matrix</h2>
+      <p>Die statische Matrix zeigt für jedes aktive VIDIS-Kriterium und jede Plattformfunktion, ob sie automatisiert ist, zusätzliche Eingaben benötigt, manuelle Prüfung erfordert oder noch nicht abgedeckt ist.</p>
       <pre><code>uv run vidis-report coverage \
   --json docs/results/coverage_matrix.json \
   --html docs/results/coverage_matrix.html</code></pre>
-      <p>Öffnen: <a href="results/coverage_matrix.html">docs/results/coverage_matrix.html</a>. Die JSON-Datei daneben ist maschinenlesbar und enthält dieselben Spalten: old checker status, new platform status, input needed, automation level, evidence artifacts, CLI/API availability und known limitations.</p>
-      <p class="note">Explizite Gap-Zeilen dokumentieren Agent-Login/Personas, Screenshot/Vision, API-Auth/Jobliste/ZIP, FastAPI-Dokument-URLs und die RDS-SPE-370-Mapping-Frage.</p>
+      <p>Öffnen: <a href="results/coverage_matrix.html">docs/results/coverage_matrix.html</a>. Die JSON-Datei daneben ist maschinenlesbar und enthält dieselben Spalten: platform status, input needed, automation level, evidence artifacts, CLI/API availability und known limitations.</p>
+      <p class="note">Explizite Gap-Zeilen dokumentieren authentifizierte Persona-Crawls, Screenshot/Vision-Review, API-Auth/Jobliste/ZIP, FastAPI-Dokument-URLs und die RDS-SPE-370-Statusfrage.</p>
     </section>
 
     <section id="api">
-      <h2>5. FastAPI-Server für Automatisierung</h2>
+      <h2>6. FastAPI-Server für Automatisierung</h2>
       <p>Für Batch- oder Integrationsfälle kann das Tool als API laufen.</p>
       <pre><code>uv run vidis serve --host 127.0.0.1 --port 8645</code></pre>
       <div class="grid">
@@ -311,7 +344,7 @@ uv run pytest -q</code></pre>
         </div>
       </div>
       <h3>Job pollieren, Jobs listen und Report erzeugen</h3>
-      <pre><code># Optional absichern: export VIDIS_API_KEY='change-me'
+      <pre><code># Optional absichern: export VIDIS_API_KEY='***'
 # Dann Authorization-Header mit dem konfigurierten Bearer-Token ergänzen
 
 curl 'http://127.0.0.1:8645/jobs?status=completed&amp;limit=100&amp;offset=0'
@@ -324,12 +357,18 @@ curl -X POST http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports \
 
 curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf
 curl -o vidis-evidence.zip http://127.0.0.1:8645/jobs/&lt;job_id&gt;/archive.zip</code></pre>
-      <p>Ohne <code>VIDIS_API_KEY</code> ist die API für lokale Entwicklung offen. Sobald <code>VIDIS_API_KEY</code> oder das alte <code>API_KEY</code> gesetzt ist, müssen alle Endpoints einen gültigen Bearer-Token senden.</p>
-      <p><code>GET /jobs</code> liefert eine begrenzte Übersicht persistierter Jobs mit optionalem <code>status</code>-Filter sowie <code>limit</code>/<code>offset</code>, ohne vollständige Ergebnisdaten einzubetten. Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code>, <code>document_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden. Lokale <code>document_paths</code> müssen auf dem Server existieren; Remote-Felder akzeptieren nur HTTP(S)-URLs. Das ZIP-Archiv enthält nur erlaubte Dateien und Reports; beliebige Zusatzdateien oder Secrets im Job-Ordner werden nicht exportiert.</p>
+      <p>Ohne <code>VIDIS_API_KEY</code> ist die API für lokale Entwicklung offen. Sobald <code>VIDIS_API_KEY</code> gesetzt ist, müssen alle Endpoints einen gültigen Bearer-Token senden.</p>
+      <p><code>GET /jobs</code> liefert eine begrenzte Übersicht persistierter Jobs mit optionalem <code>status</code>-Filter sowie <code>limit</code>/<code>offset</code>, ohne vollständige Ergebnisdaten einzubetten. Öffentliche Screenshot-Nachweise aus Website-Crawls erscheinen als sichere <code>screenshot_*</code>-Artefaktlinks; authentifizierte oder lokale Screenshots bleiben lokale Prüfbelege und werden nicht per API ausgeliefert. Das ZIP-Archiv enthält nur erlaubte Dateien und Reports; beliebige Zusatzdateien oder Secrets im Job-Ordner werden nicht exportiert.</p>
+      <h3>Agent-Mode per API</h3>
+      <pre><code>curl -X POST http://127.0.0.1:8645/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"target_url":"https://app.example.test","agentic":true,"agent_tasks":["teacher","logout"],"agent_username":"user@example.test"}'</code></pre>
+      <p>Das Passwort kann über <code>VIDIS_AGENT_PASSWORD</code> gesetzt werden; es wird nicht im Job-Metadaten-JSON persistiert.</p>
+      <p>Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code>, <code>document_capture.json</code>, <code>agent_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden. Lokale <code>document_paths</code> müssen auf dem Server existieren; Remote-Felder akzeptieren nur HTTP(S)-URLs.</p>
     </section>
 
     <section id="outputs">
-      <h2>6. Ergebnisse verstehen</h2>
+      <h2>7. Ergebnisse verstehen</h2>
       <div class="status-grid">
         <div class="status"><strong class="pass">PASS</strong><br>Automatisch ausreichende Evidenz gefunden.</div>
         <div class="status"><strong class="fail">FAIL</strong><br>Automatisch klare Gegen-Evidenz gefunden.</div>
@@ -338,18 +377,20 @@ curl -o vidis-evidence.zip http://127.0.0.1:8645/jobs/&lt;job_id&gt;/archive.zip
       <h3>Typische Dateien</h3>
       <ul>
         <li><code>results/&lt;job_id&gt;/result.json</code> – maschinenlesbare Findings pro VIDIS-Kriterium.</li>
-        <li><code>results/&lt;job_id&gt;/capture.json</code> – Browser-/Website-Signale wie Requests, Cookies, Storage, Scripts.</li>
+        <li><code>results/&lt;job_id&gt;/capture.json</code> – Browser-/Website-Signale wie Requests, Cookies, Storage, Scripts, Screenshot-Metadaten und konservative Vision-Review-Hinweise.</li>
+        <li><code>results/&lt;job_id&gt;/screenshots/*.png</code> – öffentliche Screenshot-Belege; authentifizierte Screenshots werden als <code>local_only</code> markiert und nicht über die API ausgeliefert.</li>
         <li><code>results/&lt;job_id&gt;/code_capture.json</code> – statische Code-Signale.</li>
         <li><code>results/&lt;job_id&gt;/document_capture.json</code> – extrahierte Dokument-Snippets.</li>
+        <li><code>results/&lt;job_id&gt;/agent/step_result.jsonl</code> und <code>agent_capture.json</code> – replaybarer Agent-Trace, besuchte URLs, Aktionen, Requests, Cookies/Storage und Artefaktpfade.</li>
         <li><code>report.md</code> / <code>report.pdf</code> – menschenlesbarer deutscher Bericht.</li>
       </ul>
       <p class="note"><code>MANUELL</code> ist kein Fehler. Es bedeutet, dass das Tool konservativ bleibt und keine automatische Aussage vortäuscht.</p>
     </section>
 
     <section id="troubleshooting">
-      <h2>7. Troubleshooting</h2>
+      <h2>8. Troubleshooting</h2>
       <h3>CLI zeigt veraltete Kommandos</h3>
-      <p>Aktuell gibt es <code>vidis check</code>, <code>vidis serve</code> und <code>vidis-report</code>. Alte Namen wie <code>check-url</code> sind nicht gültig.</p>
+      <p>Aktuell gibt es <code>vidis check</code>, <code>vidis serve</code> und <code>vidis-report</code>. Separate Unterbefehle wie <code>check-url</code> sind nicht gültig.</p>
       <h3>Browser-/Website-Checks schlagen fehl</h3>
       <ul>
         <li>URL mit <code>https://</code> angeben.</li>
@@ -359,11 +400,11 @@ curl -o vidis-evidence.zip http://127.0.0.1:8645/jobs/&lt;job_id&gt;/archive.zip
       <h3>PDF ist leer oder fehlt</h3>
       <ul>
         <li>Prüfen, ob <code>result.json</code> existiert.</li>
-        <li><code>uv run vidis-report --input results/&lt;job_id&gt;/result.json --pdf results/&lt;job_id&gt;/report.pdf</code> erneut ausführen.</li>
+        <li><code>uv run vidis-report report --input results/&lt;job_id&gt;/result.json --pdf results/&lt;job_id&gt;/report.pdf</code> erneut ausführen.</li>
       </ul>
       <h3>Regressionstest</h3>
       <pre><code>uv run pytest -q
-uv run python -m vidis_compliance.report_cli --input quick --md results/quick/report-v2.md --pdf results/quick/report-v2.pdf</code></pre>
+uv run python -m vidis_compliance.report_cli report --input quick --md results/quick/report-v2.md --pdf results/quick/report-v2.pdf</code></pre>
     </section>
   </main>
 
