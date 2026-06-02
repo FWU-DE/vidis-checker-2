@@ -6,6 +6,12 @@
 
 ## Zusammenfassung
 
+{% if document.semantic_disclaimer -%}
+## Hinweis zu inhaltlichen Bewertungen
+
+{{ document.semantic_disclaimer }}
+
+{% endif -%}
 | Status | Anzahl |
 | --- | ---: |
 {% for status in ["PASS", "FAIL", "MANUELL"] -%}
