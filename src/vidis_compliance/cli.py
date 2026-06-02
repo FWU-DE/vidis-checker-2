@@ -163,6 +163,7 @@ def check(
             "privacy_found": ipf_analysis.privacy.found_signals,
             "privacy_missing": ipf_analysis.privacy.missing_signals,
             "privacy_manual": ipf_analysis.privacy.manual_signals,
+            "privacy_dpo_absent_declared": ipf_analysis.privacy.dpo_absent_declared,
         }
         findings.extend(findings_from_ipf_analysis(ipf_analysis))
     if code_path:
