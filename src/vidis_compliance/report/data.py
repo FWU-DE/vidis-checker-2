@@ -155,8 +155,41 @@ def _evidence_for_finding(
         visited = ipf.get("visited_urls") or []
         if visited:
             evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
+    _append_external_audit_evidence(evidence, raw_capture)
     _append_screenshot_evidence(evidence, raw_capture, finding.criterion)
     return evidence
+
+
+def _append_external_audit_evidence(evidence: list[EvidenceItem], raw_capture: dict[str, Any]) -> None:
+    lighthouse = raw_capture.get("lighthouse") or {}
+    if lighthouse:
+        scores = lighthouse.get("scores") or {}
+        if scores:
+            formatted = []
+            for name, score in scores.items():
+                if isinstance(score, int | float):
+                    formatted.append(f"{name} {round(float(score) * 100)}%")
+            evidence.append(EvidenceItem("Lighthouse", ", ".join(formatted) or "—"))
+        links = []
+        if lighthouse.get("json"):
+            links.append(f"[JSON]({lighthouse['json']})")
+        if lighthouse.get("html"):
+            links.append(f"[HTML]({lighthouse['html']})")
+        if links:
+            evidence.append(EvidenceItem("Lighthouse-Artefakte", ", ".join(links)))
+        elif lighthouse.get("note"):
+            evidence.append(EvidenceItem("Lighthouse", str(lighthouse["note"])))
+    webinspector = raw_capture.get("webinspector") or {}
+    if webinspector:
+        links = []
+        if webinspector.get("network"):
+            links.append(f"[Network]({webinspector['network']})")
+        if webinspector.get("console"):
+            links.append(f"[Console]({webinspector['console']})")
+        if webinspector.get("storage"):
+            links.append(f"[Storage]({webinspector['storage']})")
+        if links:
+            evidence.append(EvidenceItem("WebInspector-Exporte", ", ".join(links)))
 
 
 def _append_screenshot_evidence(evidence: list[EvidenceItem], raw_capture: dict[str, Any], criterion: str) -> None:

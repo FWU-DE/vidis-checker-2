@@ -29,6 +29,7 @@ from .sources.agentic import (
 )
 from .sources.code.inspect import inspect_code_path
 from .sources.documents.analyze import analyze_documents, build_document_inputs
+from .evidence import run_lighthouse, write_webinspector_exports
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 import yaml
@@ -65,6 +66,8 @@ def check(
     agent_persona: str | None = typer.Option(None, "--agent-persona", help="Persona für Agent-Crawl, z. B. SuS oder Lehrkraefte."),
     agent_username: str | None = typer.Option(None, "--agent-username", envvar="VIDIS_AGENT_USERNAME", help="Login-Benutzername; alternativ VIDIS_AGENT_USERNAME."),
     agent_password: str | None = typer.Option(None, "--agent-password", envvar="VIDIS_AGENT_PASSWORD", help="Login-Passwort; alternativ VIDIS_AGENT_PASSWORD."),
+    lighthouse: bool = typer.Option(False, "--lighthouse", help="Optional Lighthouse JSON/HTML-Audit als Report-Artefakt erzeugen."),
+    webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
 ):
     """Run unified VIDIS checks (site and/or code)."""
     crit = load_criteria()
@@ -86,6 +89,10 @@ def check(
             cap = crawl(url, pages=pages, headless=True)
         raw_capture = asdict(cap)
         raw_capture["vision_reviews"] = review_screenshots(raw_capture.get("screenshots") or [])
+        if lighthouse:
+            raw_capture["lighthouse"] = run_lighthouse(url, outdir / "lighthouse")
+        if webinspector_export:
+            raw_capture["webinspector"] = write_webinspector_exports(raw_capture, outdir / "webinspector")
         page_signals = {
             "cookies": cap.cookies,
             "scripts": cap.scripts,

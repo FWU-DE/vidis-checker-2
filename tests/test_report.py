@@ -205,3 +205,32 @@ def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_p
     assert "| LocalStorage-Schlüssel | CookieConsentBulkSetting-abc, matomo.id |" in text
     assert "| SessionStorage-Schlüssel | IDE, csrf_token |" in text
     assert "secret" not in text
+
+
+
+def test_generate_markdown_lists_lighthouse_and_webinspector_artifacts(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[CheckFinding(criterion="RDS-CUC-371", status="MANUELL", note="Storage prüfen")],
+    )
+    raw_capture = {
+        "url": "https://example.test",
+        "lighthouse": {
+            "available": True,
+            "json": "lighthouse/report.json",
+            "html": "lighthouse/report.html",
+            "scores": {"performance": 0.88, "accessibility": 0.96, "best-practices": 0.91, "seo": 0.87},
+        },
+        "webinspector": {
+            "network": "webinspector/network.json",
+            "console": "webinspector/console.json",
+        },
+    }
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture=raw_capture)
+
+    text = output.read_text(encoding="utf-8")
+    assert "| Lighthouse | performance 88%, accessibility 96%, best-practices 91%, seo 87% |" in text
+    assert "| Lighthouse-Artefakte | [JSON](lighthouse/report.json), [HTML](lighthouse/report.html) |" in text
+    assert "| WebInspector-Exporte | [Network](webinspector/network.json), [Console](webinspector/console.json)" in text
