@@ -431,6 +431,58 @@ def test_pass_fail_markdown_does_not_print_full_criterion_text(tmp_path: Path) -
     assert "Es werden keine sonstigen Informationen auf der Endeinrichtung" not in rds_cuc_375_section
 
 
+def test_generate_markdown_explains_every_status_for_beginners_with_next_steps(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="beginner",
+        findings=[
+            CheckFinding(criterion="ITS-ENC-359", status="PASS", note="HTTPS erreichbar"),
+            CheckFinding(criterion="RDS-IPF-366", status="FAIL", note="Impressum unvollständig: https://example.test/impressum; gefunden: Kontaktangaben inkl. E-Mail (§ 5 Abs. 1 S. 2 DDG); fehlend: Registerangaben (§ 5 Abs. 1 S. 4 DDG), Steuer-ID/Wirtschafts-ID (§ 5 Abs. 1 S. 6 DDG)"),
+            CheckFinding(criterion="RDS-CUC-374", status="MANUELL", note="Unbekannter Browser-Storage: app_state"),
+        ],
+    )
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture={"url": "https://example.test", "ipf": {"impressum_url": "https://example.test/impressum"}})
+
+    text = output.read_text(encoding="utf-8")
+    pass_section = text_section(text, "### ITS-ENC-359:")
+    fail_section = text_section(text, "### RDS-IPF-366:")
+    manual_section = text_section(text, "### RDS-CUC-374:")
+    for section in (pass_section, fail_section, manual_section):
+        assert "Was bedeutet das?" in section
+        assert "Warum ist das relevant?" in section
+        assert "Nächste Schritte" in section
+    assert "Dieses Kriterium wirkt aktuell erfüllt" in pass_section
+    assert "Für Anfänger: Ein Impressum ist die gesetzliche Anbieterkennzeichnung" in fail_section
+    assert "Registerangaben" in fail_section
+    assert "Steuer-ID/Wirtschafts-ID" in fail_section
+    assert "Prüfe die genannten fehlenden Punkte" in fail_section
+    assert "Hier ist eine fachliche oder technische Klärung nötig" in manual_section
+
+
+def test_generate_pdf_contains_beginner_next_steps_for_failed_imprint(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="beginner-pdf",
+        findings=[
+            CheckFinding(
+                criterion="RDS-IPF-366",
+                status="FAIL",
+                note="Impressum unvollständig: https://example.test/impressum; gefunden: Kontaktangaben inkl. E-Mail (§ 5 Abs. 1 S. 2 DDG); fehlend: Registerangaben (§ 5 Abs. 1 S. 4 DDG)",
+            )
+        ],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(result, output, raw_capture={"url": "https://example.test", "ipf": {"impressum_url": "https://example.test/impressum"}})
+
+    text = subprocess.run(["pdftotext", str(output), "-"], check=True, text=True, capture_output=True).stdout
+    assert "Was bedeutet das?" in text
+    assert "Warum ist das relevant?" in text
+    assert "Naechste Schritte" in text
+    assert "Fuer Anfaenger: Ein Impressum ist die gesetzliche Anbieterkennzeichnung" in text
+    assert "Registerangaben" in text
+
+
 def test_active_registry_criteria_have_non_empty_descriptions() -> None:
     from vidis_compliance.report.data import load_criteria
 
