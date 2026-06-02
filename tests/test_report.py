@@ -234,3 +234,21 @@ def test_generate_markdown_lists_lighthouse_and_webinspector_artifacts(tmp_path:
     assert "| Lighthouse | performance 88%, accessibility 96%, best-practices 91%, seo 87% |" in text
     assert "| Lighthouse-Artefakte | [JSON](lighthouse/report.json), [HTML](lighthouse/report.html) |" in text
     assert "| WebInspector-Exporte | [Network](webinspector/network.json), [Console](webinspector/console.json)" in text
+
+
+
+def test_generate_markdown_includes_criteria_missing_from_result_as_untested(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="partial",
+        findings=[CheckFinding(criterion="RDS-CUC-371", status="PASS", note="Only one criterion was executed")],
+    )
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture={"url": "https://example.test"})
+
+    text = output.read_text(encoding="utf-8")
+    assert "### RDS-CUC-371: Nicht essenzielle Cookies" in text
+    assert "### ITS-ENC-359: Website nur über https:// aufrufbar" in text
+    assert "### RDS-AGB-368:" in text
+    assert "als manuell zu prüfen bewertet" in text
+    assert "Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet." in text

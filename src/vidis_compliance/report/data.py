@@ -53,7 +53,26 @@ def build_report_document(
 ) -> ReportDocument:
     criteria = criteria or load_criteria()
     reports: list[CriterionReport] = []
-    for finding in result.findings:
+    findings_by_criterion = {finding.criterion: finding for finding in result.findings}
+    ordered_findings = [
+        _normalize_report_finding(
+            findings_by_criterion.get(
+                code,
+                CheckFinding(
+                    criterion=code,
+                    status="MANUELL",
+                    note="Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet.",
+                ),
+            )
+        )
+        for code in criteria.items.keys()
+    ]
+    ordered_findings.extend(
+        _normalize_report_finding(finding)
+        for finding in result.findings
+        if finding.criterion not in criteria.items
+    )
+    for finding in ordered_findings:
         criterion = criteria.items.get(
             finding.criterion,
             VidisCriterion(
@@ -79,6 +98,16 @@ def build_report_document(
         raw_capture=raw_capture,
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
     )
+
+
+def _normalize_report_finding(finding: CheckFinding) -> CheckFinding:
+    if finding.status == "MANUELL" and finding.note.strip() == "Not yet implemented":
+        return CheckFinding(
+            criterion=finding.criterion,
+            status="MANUELL",
+            note="Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet.",
+        )
+    return finding
 
 
 def _status_german(status: str) -> str:

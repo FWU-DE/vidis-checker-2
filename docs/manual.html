@@ -308,6 +308,7 @@ uv run vidis check \
   --md results/example-full/report.md \
   --pdf results/example-full/report.pdf</code></pre>
       <p><code>--input</code> akzeptiert entweder eine Job-ID unter <code>results/</code> oder einen direkten Pfad zu <code>result.json</code>.</p>
+      <p>Markdown- und PDF-Reports listen immer alle VIDIS-Prüfkriterien. Kriterien, die im konkreten Lauf nicht automatisiert getestet wurden, erscheinen als <code>MANUELL</code> mit dem Hinweis, dass dieses Prüfkriterium im Lauf nicht automatisiert getestet wurde.</p>
       <p>PDF-Reports enthalten eine KPI-Zusammenfassung, gekürzte Nachweise, Statusfarben und einen Screenshot-Anhang für öffentliche Website-Screenshots. Authentifizierte oder <code>local_only</code>-Screenshots bleiben lokale Artefakte und werden nur referenziert. Falls <code>--lighthouse</code> oder <code>--webinspector-export</code> genutzt wurde, verlinken Markdown- und PDF-Reports zusätzlich die erzeugten JSON-/HTML-Artefakte.</p>
     </section>
 
