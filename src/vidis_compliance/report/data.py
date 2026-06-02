@@ -126,6 +126,14 @@ def _evidence_for_finding(
         session_storage = raw_capture.get("session_storage") or {}
         evidence.append(EvidenceItem("LocalStorage-Schlüssel", ", ".join(local_storage.keys()) or "—"))
         evidence.append(EvidenceItem("SessionStorage-Schlüssel", ", ".join(session_storage.keys()) or "—"))
+    if finding.criterion in {"RDS-CUC-375", "RDS-CUC-376", "RDS-CUC-377"}:
+        browser_signals = raw_capture.get("browser_signals") or {}
+        device_storage = browser_signals.get("device_storage") or []
+        fingerprinting = browser_signals.get("fingerprinting") or []
+        if finding.criterion == "RDS-CUC-375":
+            evidence.append(EvidenceItem("Device-/Browser-Storage-APIs", _api_signal_summary(device_storage)))
+        if finding.criterion in {"RDS-CUC-376", "RDS-CUC-377"}:
+            evidence.append(EvidenceItem("Fingerprinting-/Entropy-APIs", _api_signal_summary(fingerprinting)))
     if finding.criterion in {"ITS-ENC-359", "ITS-ENC-360"}:
         if raw_capture.get("url"):
             evidence.append(EvidenceItem("Erfasste URL", str(raw_capture["url"])))
@@ -144,3 +152,17 @@ def _evidence_for_finding(
         if visited:
             evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
     return evidence
+
+
+def _api_signal_summary(items: list[dict[str, Any]], limit: int = 12) -> str:
+    if not items:
+        return "—"
+    values = []
+    for item in items[:limit]:
+        api = str(item.get("api") or "")
+        count = item.get("count")
+        if api:
+            values.append(f"{api} ({count}×)" if count else api)
+    if len(items) > limit:
+        values.append(f"+{len(items) - limit} weitere")
+    return ", ".join(values) or "—"

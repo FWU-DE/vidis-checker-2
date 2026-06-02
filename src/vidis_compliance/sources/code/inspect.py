@@ -68,6 +68,26 @@ PRIVACY_RE = re.compile(r"(datenschutz|privacy|privacy-policy|privacypolicy|dse)
 IMPRESSUM_RE = re.compile(r"(impressum|legal notice|anbieterkennzeichnung)", re.IGNORECASE)
 COOKIE_RE = re.compile(r"(document\.cookie|setCookie\s*\(|cookies?\.set\s*\(|response\.set_cookie\s*\()", re.IGNORECASE)
 LOCAL_STORAGE_RE = re.compile(r"\b(localStorage|sessionStorage)\b", re.IGNORECASE)
+DEVICE_STORAGE_PATTERNS = {
+    "indexedDB.open": "indexedDB.open",
+    "caches.open": "caches.open",
+    "serviceWorker.register": "serviceWorker.register",
+}
+FINGERPRINTING_PATTERNS = {
+    "canvas.toDataURL": "toDataURL",
+    "canvas.getContext": "getContext('2d'",
+    "WebGLRenderingContext.getParameter": "getParameter",
+    "AudioContext": "AudioContext",
+    "navigator.mediaDevices.enumerateDevices": "enumerateDevices",
+    "navigator.hardwareConcurrency": "hardwareConcurrency",
+    "navigator.userAgentData.getHighEntropyValues": "getHighEntropyValues",
+}
+FINGERPRINTING_LIBRARY_PATTERNS = {
+    "FingerprintJS": "fingerprintjs",
+    "ClientJS": "clientjs",
+    "ThumbmarkJS": "thumbmarkjs",
+    "CreepJS": "creepjs",
+}
 
 
 @dataclass
@@ -86,6 +106,9 @@ class CodeInspection:
     storage: list[CodeEvidence] = field(default_factory=list)
     cookies: list[CodeEvidence] = field(default_factory=list)
     external_scripts: list[CodeEvidence] = field(default_factory=list)
+    device_storage: list[CodeEvidence] = field(default_factory=list)
+    fingerprinting: list[CodeEvidence] = field(default_factory=list)
+    fingerprinting_libraries: list[CodeEvidence] = field(default_factory=list)
 
 
 def inspect_code_path(path: str | Path, audience: str = "beide") -> tuple[list[CheckFinding], dict]:
@@ -155,6 +178,17 @@ def _collect_line_signals(inspection: CodeInspection, rel_path: str, line_no: in
 
     if LOCAL_STORAGE_RE.search(line):
         inspection.storage.append(CodeEvidence(rel_path, line_no, _compact(line)))
+    for label, needle in DEVICE_STORAGE_PATTERNS.items():
+        if needle.lower() in lowered:
+            inspection.device_storage.append(CodeEvidence(rel_path, line_no, f"{label}: {_compact(line)}"))
+    for label, needle in FINGERPRINTING_PATTERNS.items():
+        if needle.lower() in lowered:
+            inspection.fingerprinting.append(CodeEvidence(rel_path, line_no, f"{label}: {_compact(line)}"))
+    for label, needle in FINGERPRINTING_LIBRARY_PATTERNS.items():
+        if needle.lower() in lowered:
+            evidence = CodeEvidence(rel_path, line_no, f"{label}: {_compact(line)}")
+            inspection.fingerprinting_libraries.append(evidence)
+            inspection.fingerprinting.append(evidence)
     if COOKIE_RE.search(line):
         inspection.cookies.append(CodeEvidence(rel_path, line_no, _compact(line)))
 
@@ -198,6 +232,27 @@ def _findings_from_inspection(inspection: CodeInspection, audience: str) -> list
             note=_evidence_note("localStorage/sessionStorage-Nutzung im Quellcode", inspection.storage)
             if inspection.storage
             else "Keine localStorage/sessionStorage-Nutzung im Quellcode gefunden",
+        ),
+        CheckFinding(
+            criterion="RDS-CUC-375",
+            status="MANUELL" if inspection.device_storage else "PASS",
+            note=_evidence_note("Device-/Browser-Storage-APIs im Quellcode", inspection.device_storage)
+            if inspection.device_storage
+            else "Keine IndexedDB/Cache/Service-Worker-Storage-Nutzung im Quellcode gefunden",
+        ),
+        CheckFinding(
+            criterion="RDS-CUC-376",
+            status="FAIL" if inspection.fingerprinting_libraries and _is_sus_audience(audience) else ("MANUELL" if inspection.fingerprinting else "PASS"),
+            note=_evidence_note("Browserfingerprinting-Signale im Quellcode", inspection.fingerprinting)
+            if inspection.fingerprinting
+            else "Keine Browserfingerprinting-Signale im Quellcode gefunden",
+        ),
+        CheckFinding(
+            criterion="RDS-CUC-377",
+            status="FAIL" if inspection.fingerprinting_libraries and _is_sus_audience(audience) else ("MANUELL" if inspection.fingerprinting else "PASS"),
+            note=_evidence_note("Fingerprinting-/Trackingmechanismen im Quellcode", inspection.fingerprinting_libraries or inspection.fingerprinting)
+            if (inspection.fingerprinting_libraries or inspection.fingerprinting)
+            else "Keine Fingerprinting-/Trackingmechanismen im Quellcode gefunden",
         ),
         CheckFinding(
             criterion="RDS-CUC-371",
@@ -258,6 +313,11 @@ def _inspection_to_dict(inspection: CodeInspection) -> dict:
         "storage": [_evidence_to_dict(item) for item in inspection.storage],
         "cookies": [_evidence_to_dict(item) for item in inspection.cookies],
         "external_scripts": [_evidence_to_dict(item) for item in inspection.external_scripts],
+        "device_storage": [_evidence_to_dict(item) for item in inspection.device_storage],
+        "fingerprinting": [_evidence_to_dict(item) for item in inspection.fingerprinting],
+        "fingerprinting_libraries": [
+            _evidence_to_dict(item) for item in inspection.fingerprinting_libraries
+        ],
     }
 
 

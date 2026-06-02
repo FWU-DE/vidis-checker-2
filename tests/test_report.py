@@ -54,6 +54,39 @@ def test_generate_markdown_includes_ipf_evidence_urls(tmp_path: Path) -> None:
     assert "| Besuchte IPF-URLs | https://example.test/, https://example.test/impressum |" in text
 
 
+def test_generate_markdown_lists_browser_signal_evidence_without_storage_values(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[
+            CheckFinding(
+                criterion="RDS-CUC-375",
+                status="MANUELL",
+                note="Device-/Browser-Storage-APIs genutzt: indexedDB.open",
+            ),
+            CheckFinding(
+                criterion="RDS-CUC-376",
+                status="MANUELL",
+                note="Browserfingerprinting-/Entropy-APIs genutzt: canvas.toDataURL",
+            ),
+        ],
+    )
+    raw_capture = {
+        "browser_signals": {
+            "device_storage": [{"api": "indexedDB.open", "count": 1}],
+            "fingerprinting": [{"api": "canvas.toDataURL", "count": 2}],
+        },
+        "local_storage": {"sensitive": "large-secret-value"},
+    }
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture=raw_capture)
+
+    text = output.read_text(encoding="utf-8")
+    assert "| Device-/Browser-Storage-APIs | indexedDB.open (1×) |" in text
+    assert "| Fingerprinting-/Entropy-APIs | canvas.toDataURL (2×) |" in text
+    assert "large-secret-value" not in text
+
+
 def test_generate_pdf_writes_non_empty_report(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",

@@ -42,7 +42,8 @@ JS_RESOURCES = """
         type: el.tagName.toLowerCase(),
         url: src,
         id: el.id || null,
-        className: el.className || null
+        className: el.className || null,
+        selector: el.id ? `${el.tagName.toLowerCase()}#${el.id}` : (el.className ? `${el.tagName.toLowerCase()}.${String(el.className).trim().split(/\s+/).join('.')}` : el.tagName.toLowerCase())
       });
     }
   });
@@ -52,6 +53,74 @@ JS_RESOURCES = """
 
 JS_LINKS = """
 () => Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href'))
+""".strip()
+
+JS_LINK_DETAILS = """
+() => Array.from(document.querySelectorAll('a[href]')).map(a => ({
+  url: a.href,
+  text: (a.innerText || a.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 180),
+  selector: a.id ? `a#${a.id}` : (a.className ? `a.${String(a.className).trim().split(/\s+/).join('.')}` : 'a')
+}))
+""".strip()
+
+JS_VISIBLE_TEXT = """
+() => {
+  const text = (document.body && document.body.innerText ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
+  if (!text) return [];
+  const snippets = [];
+  for (let i = 0; i < text.length && snippets.length < 20; i += 220) {
+    snippets.push(text.slice(i, i + 220));
+  }
+  return snippets;
+}
+""".strip()
+
+JS_BROWSER_SIGNAL_INSTALL = """
+(() => {
+  if (window.__vidisSignals) return;
+  const counts = {fingerprinting: {}, device_storage: {}};
+  window.__vidisSignals = counts;
+  const bump = (group, api) => { counts[group][api] = (counts[group][api] || 0) + 1; };
+  const wrapMethod = (target, name, group, api) => {
+    try {
+      if (!target || typeof target[name] !== 'function') return;
+      const original = target[name];
+      if (original.__vidisWrapped) return;
+      const wrapped = function(...args) { bump(group, api); return original.apply(this, args); };
+      wrapped.__vidisWrapped = true;
+      target[name] = wrapped;
+    } catch (_) {}
+  };
+  wrapMethod(window.HTMLCanvasElement && HTMLCanvasElement.prototype, 'toDataURL', 'fingerprinting', 'canvas.toDataURL');
+  wrapMethod(window.HTMLCanvasElement && HTMLCanvasElement.prototype, 'getContext', 'fingerprinting', 'canvas.getContext');
+  if (window.WebGLRenderingContext) wrapMethod(WebGLRenderingContext.prototype, 'getParameter', 'fingerprinting', 'WebGLRenderingContext.getParameter');
+  if (window.AudioContext) wrapMethod(AudioContext.prototype, 'createOscillator', 'fingerprinting', 'AudioContext.createOscillator');
+  if (navigator.mediaDevices) wrapMethod(navigator.mediaDevices, 'enumerateDevices', 'fingerprinting', 'navigator.mediaDevices.enumerateDevices');
+  if (navigator.userAgentData) wrapMethod(navigator.userAgentData, 'getHighEntropyValues', 'fingerprinting', 'navigator.userAgentData.getHighEntropyValues');
+  for (const prop of ['hardwareConcurrency', 'deviceMemory', 'platform', 'plugins', 'languages']) {
+    try {
+      const proto = Object.getPrototypeOf(navigator);
+      const desc = Object.getOwnPropertyDescriptor(proto, prop);
+      if (desc && desc.get && !desc.get.__vidisWrapped) {
+        const original = desc.get;
+        const wrapped = function() { bump('fingerprinting', `navigator.${prop}`); return original.call(this); };
+        wrapped.__vidisWrapped = true;
+        Object.defineProperty(proto, prop, {...desc, get: wrapped});
+      }
+    } catch (_) {}
+  }
+  if (window.indexedDB) wrapMethod(indexedDB, 'open', 'device_storage', 'indexedDB.open');
+  if (window.caches) wrapMethod(caches, 'open', 'device_storage', 'caches.open');
+  if (navigator.serviceWorker) wrapMethod(navigator.serviceWorker, 'register', 'device_storage', 'serviceWorker.register');
+})()
+""".strip()
+
+JS_BROWSER_SIGNALS = """
+() => {
+  const src = window.__vidisSignals || {fingerprinting: {}, device_storage: {}};
+  const toItems = obj => Object.entries(obj || {}).map(([api, count]) => ({api, count})).sort((a, b) => a.api.localeCompare(b.api));
+  return {fingerprinting: toItems(src.fingerprinting), device_storage: toItems(src.device_storage)};
+}
 """.strip()
 
 ConsentHook = Callable[[Page], None]
@@ -85,6 +154,10 @@ class PageCapture:
     session_storage: Dict[str, str]
     scripts: List[str]
     requests: List[str]
+    resources: List[dict] = field(default_factory=list)
+    links: List[dict] = field(default_factory=list)
+    visible_text: List[str] = field(default_factory=list)
+    browser_signals: dict[str, list[dict]] = field(default_factory=dict)
     visited_urls: List[str] = field(default_factory=list)
 
 
@@ -130,6 +203,18 @@ def _dedupe_sorted(values: Iterable[str]) -> List[str]:
     return sorted({value for value in values if value})
 
 
+def _dedupe_dicts(values: Iterable[dict], keys: tuple[str, ...]) -> List[dict]:
+    by_key: dict[tuple[str, ...], dict] = {}
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        dedupe_key = tuple(str(value.get(key) or "") for key in keys)
+        if not any(dedupe_key):
+            continue
+        by_key[dedupe_key] = value
+    return [by_key[key] for key in sorted(by_key)]
+
+
 def _cookie_key(cookie: dict) -> tuple[str, str, str, str]:
     return (
         str(cookie.get("domain") or ""),
@@ -149,6 +234,10 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
             session_storage={},
             scripts=[],
             requests=[],
+            resources=[],
+            links=[],
+            visible_text=[],
+            browser_signals={},
             visited_urls=[],
         )
 
@@ -157,6 +246,13 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
     session_storage: Dict[str, str] = {}
     scripts: list[str] = []
     requests: list[str] = []
+    resources: list[dict] = []
+    links: list[dict] = []
+    visible_text: list[str] = []
+    browser_signal_counts: dict[str, dict[str, int]] = {
+        "fingerprinting": {},
+        "device_storage": {},
+    }
     visited_urls: list[str] = []
 
     for capture in captures:
@@ -167,6 +263,25 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
         session_storage.update(capture.session_storage)
         scripts.extend(capture.scripts)
         requests.extend(capture.requests)
+        resources.extend(capture.resources)
+        links.extend(capture.links)
+        visible_text.extend(capture.visible_text)
+        for group, items in (capture.browser_signals or {}).items():
+            group_counts = browser_signal_counts.setdefault(group, {})
+            for item in items:
+                api = str(item.get("api") or "")
+                if not api:
+                    continue
+                group_counts[api] = group_counts.get(api, 0) + int(item.get("count") or 0)
+
+    browser_signals = {
+        group: [
+            {"api": api, "count": count}
+            for api, count in sorted(counts.items())
+            if count
+        ]
+        for group, counts in browser_signal_counts.items()
+    }
 
     return PageCapture(
         url=captures[0].url,
@@ -175,6 +290,10 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
         session_storage=dict(sorted(session_storage.items())),
         scripts=_dedupe_sorted(scripts),
         requests=_dedupe_sorted(requests),
+        resources=_dedupe_dicts(resources, ("type", "url", "selector")),
+        links=_dedupe_dicts(links, ("url", "text", "selector")),
+        visible_text=_dedupe_sorted(visible_text),
+        browser_signals=browser_signals,
         visited_urls=list(dict.fromkeys(visited_urls)),
     )
 
@@ -207,6 +326,7 @@ def _capture_page(
     consent_hook: ConsentHook | None = None,
     request_start: int = 0,
 ) -> PageCapture:
+    page.add_init_script(JS_BROWSER_SIGNAL_INSTALL)
     page.goto(url, wait_until="load", timeout=30000)
     try:
         page.wait_for_load_state("networkidle", timeout=5000)
@@ -219,6 +339,9 @@ def _capture_page(
     local_storage = page.evaluate(JS_LOCAL)
     session_storage = page.evaluate(JS_SESSION)
     resources = page.evaluate(JS_RESOURCES)
+    links = page.evaluate(JS_LINK_DETAILS)
+    visible_text = page.evaluate(JS_VISIBLE_TEXT)
+    browser_signals = page.evaluate(JS_BROWSER_SIGNALS)
     scripts = [r["url"] for r in resources if r.get("type") == "script"]
     return PageCapture(
         url=page.url,
@@ -227,6 +350,10 @@ def _capture_page(
         session_storage=session_storage,
         scripts=scripts,
         requests=list(requests[request_start:]),
+        resources=resources,
+        links=links,
+        visible_text=visible_text,
+        browser_signals=browser_signals,
     )
 
 

@@ -58,6 +58,46 @@ def test_inspect_code_path_maps_frontend_signals_to_vidis_findings(tmp_path: Pat
     assert capture["signals"]["tracking"]
 
 
+def test_inspect_code_path_maps_device_storage_and_fingerprinting_signals(tmp_path: Path) -> None:
+    project = tmp_path / "fingerprint-app"
+    src = project / "src"
+    src.mkdir(parents=True)
+    (src / "fingerprint.js").write_text(
+        """
+        import FingerprintJS from '@fingerprintjs/fingerprintjs';
+
+        const fpPromise = FingerprintJS.load();
+        const canvas = document.createElement('canvas');
+        canvas.getContext('2d').fillText('vidis', 1, 1);
+        canvas.toDataURL();
+        new AudioContext().createOscillator();
+        navigator.mediaDevices.enumerateDevices();
+        navigator.hardwareConcurrency;
+        navigator.userAgentData.getHighEntropyValues(['platformVersion']);
+
+        indexedDB.open('vidis-cache');
+        caches.open('asset-cache');
+        navigator.serviceWorker.register('/sw.js');
+        """,
+        encoding="utf-8",
+    )
+
+    findings, capture = inspect_code_path(project, audience="SuS")
+    by_code = {finding.criterion: finding for finding in findings}
+
+    assert by_code["RDS-CUC-375"].status == "MANUELL"
+    assert "indexedDB.open" in by_code["RDS-CUC-375"].note
+    assert "serviceWorker.register" in by_code["RDS-CUC-375"].note
+    assert by_code["RDS-CUC-376"].status == "FAIL"
+    assert "FingerprintJS" in by_code["RDS-CUC-376"].note
+    assert "canvas.toDataURL" in by_code["RDS-CUC-376"].note
+    assert by_code["RDS-CUC-377"].status == "FAIL"
+    assert "FingerprintJS" in by_code["RDS-CUC-377"].note
+    assert capture["signals"]["device_storage"]
+    assert capture["signals"]["fingerprinting"]
+    assert capture["signals"]["fingerprinting_libraries"]
+
+
 def test_cli_check_code_path_outputs_non_placeholder_findings(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "fixture-app"
     _write_frontend_fixture(project)

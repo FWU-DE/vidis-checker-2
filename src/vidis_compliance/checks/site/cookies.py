@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Dict, Any, List, Tuple
 
+from ...models import Status
 from .cookie_db import CookieDatabase, get_default_cookie_database
 
 # Minimal known tracker heuristics
@@ -28,7 +29,7 @@ def classify_cookies(
     data: Dict[str, Any],
     audience: str,
     cookie_database: CookieDatabase | None = None,
-) -> Tuple[str, str]:
+) -> Tuple[Status, str]:
     """
     RDS-CUC-371/372:
     - RDS-CUC-371 identifies non-essential cookies via vidis-checker cookie_db.json.
@@ -86,7 +87,7 @@ def classify_cookies(
     return 'MANUELL', 'Keine Cookies zur Bewertung nach RDS-CUC-371/372 erkannt'
 
 
-def classify_tracking_pixel(data: Dict[str, Any], audience: str) -> Tuple[str, str]:
+def classify_tracking_pixel(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
     """
     RDS-CUC-373:
     - If network requests or script src match known trackers → FAIL for SuS, MANUELL otherwise
@@ -108,7 +109,7 @@ def classify_tracking_pixel(data: Dict[str, Any], audience: str) -> Tuple[str, s
     return 'PASS', 'Keine offensichtlichen Tracker gefunden'
 
 
-def classify_local_storage(data: Dict[str, Any], audience: str) -> Tuple[str, str]:
+def classify_local_storage(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
     """
     RDS-CUC-374:
     - If localStorage/sessionStorage contain known tracker keys → FAIL (SuS), MANUELL otherwise
@@ -128,3 +129,35 @@ def classify_local_storage(data: Dict[str, Any], audience: str) -> Tuple[str, st
             return 'FAIL', f"Tracker-Storage: {', '.join(sorted(set(hits)))}"
         return 'MANUELL', f"Storage erfordert Einwilligung?: {', '.join(sorted(set(hits)))}"
     return 'MANUELL', 'Keine bekannten Tracker-Storage-Schlüssel erkannt'
+
+
+def _signal_api_names(data: Dict[str, Any], group: str) -> list[str]:
+    signals = data.get('browser_signals') or {}
+    return sorted({str(item.get('api') or '') for item in signals.get(group, []) if item.get('api')})
+
+
+def classify_device_storage_access(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
+    """RDS-CUC-375: IndexedDB/Cache/Service-Worker storage access is evidence, not automatically prohibited."""
+    hits = _signal_api_names(data, 'device_storage')
+    if hits:
+        return 'MANUELL', f"Device-/Browser-Storage-APIs genutzt: {', '.join(hits[:10])}"
+    return 'PASS', 'Keine IndexedDB/Cache/Service-Worker-Storage-Zugriffe erkannt'
+
+
+def classify_browser_fingerprinting(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
+    """RDS-CUC-376: generic entropy/fingerprinting API use is manual evidence."""
+    hits = _signal_api_names(data, 'fingerprinting')
+    if hits:
+        return 'MANUELL', f"Browserfingerprinting-/Entropy-APIs genutzt: {', '.join(hits[:10])}"
+    return 'PASS', 'Keine Browserfingerprinting-/Entropy-API-Nutzung erkannt'
+
+
+def classify_tracking_mechanisms(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
+    """RDS-CUC-377: known tracker requests remain FAIL for SuS; generic fingerprinting APIs stay MANUELL."""
+    tracker_status, tracker_note = classify_tracking_pixel(data, audience)
+    if tracker_status == 'FAIL':
+        return tracker_status, tracker_note
+    fp_hits = _signal_api_names(data, 'fingerprinting')
+    if fp_hits:
+        return 'MANUELL', f"Potenzielle Tracking-/Fingerprintingmechanismen: {', '.join(fp_hits[:10])}"
+    return tracker_status, tracker_note

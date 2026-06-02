@@ -3,148 +3,147 @@ RDS-CDN-379:
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-371:
   name: Nicht essenzielle Cookies
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-372:
   name: Cookies allgemein
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-373:
   name: Trackingpixel
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-374:
   name: Local Browser Storage
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-375:
   name: Informationen auf der Endeinrichtung des Endnutzers
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-376:
   name: Browserfingerprints
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-377:
   name: Trackingmechanismen zu nicht pädagogischen Zwecken
   area: RDS
   must: true
   description: |
-    
+
 RDS-CUC-453:
   name: Beschreibung aller Cookies
   area: RDS
   must: true
   description: |
-    
+
 RDS-DEV-380:
   name: Datenerhebung und -verarbeitung
   area: RDS
   must: true
   description: |
-    
+
 RDS-DEV-381:
   name: Umgang mit Daten nach Beendigung der Zusammenarbeit
   area: RDS
   must: true
   description: |
-    
+
 RDS-DEV-466:
   name: Sichere Datenverarbeitung
   area: RDS
   must: true
   description: |
-    
+
 RDS-DSO-383:
   name: Benennung eines Datenschutzbeauftragten
   area: RDS
   must: true
   description: |
-    
+
 RDS-IPF-364:
   name: Leicht auffindbares Impressum
   area: RDS
   must: true
   description: |
-    
+
 RDS-IPF-365:
   name: Leicht auffindbare Datenschutzerklärung
   area: RDS
   must: true
   description: |
-    
+
 RDS-IPF-366:
   name: Vollständiges Impressum
   area: RDS
   must: true
   description: |
-    
+
 RDS-IPF-367:
   name: Vollständige Datenschutzerklärung
   area: RDS
   must: true
   description: |
-    
+
 RDS-AGB-368:
   name: "Nutzungsbedingungen/AGB: Datenschutzkonform"
   area: RDS
   must: true
   description: |
-    
+
 RDS-AGB-369:
   name: "Nutzungsbedingungen/AGB: AVV-konform"
   area: RDS
   must: true
   description: |
-    
+
 RDS-VIN-354:
   name: Jugendmedienschutz
   area: RDS
   must: true
   description: |
-    
+
 RDS-WER-384:
   name: Werbefreiheit
   area: RDS
   must: true
   description: |
-    
+
 RDS-WER-385:
   name: Verweise auf Werbeinhalte
   area: RDS
   must: true
   description: |
-    
+
 ITS-ENC-359:
   name: Website nur über https:// aufrufbar
   area: ITS
   must: true
   description: |
-    
+
 ITS-ENC-360:
   name: Es sind Umleitungen von http auf https konfiguriert.
   area: ITS
   must: true
   description: |
-    
+
 ITS-ENC-361:
   name: Ablehnen veralteter TLS/SSL-Protokolle
   area: ITS
   must: true
   description: |
-    

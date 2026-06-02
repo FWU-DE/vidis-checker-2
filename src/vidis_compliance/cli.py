@@ -4,7 +4,19 @@ from dataclasses import asdict
 from pathlib import Path
 import typer
 from .models import JobConfig, JobResult, CheckFinding, CriteriaIndex, VidisCriterion
-from .checks.site.cookies import classify_cookies, classify_tracking_pixel, classify_local_storage
+from .checks.site.advertising import (
+    classify_advertising,
+    classify_outbound_ad_links,
+    classify_youth_protection,
+)
+from .checks.site.cookies import (
+    classify_browser_fingerprinting,
+    classify_cookies,
+    classify_device_storage_access,
+    classify_local_storage,
+    classify_tracking_mechanisms,
+    classify_tracking_pixel,
+)
 from .checks.site.basic_http import check_site_transport
 from .checks.site.ipf import analyze_ipf_site, findings_from_ipf_analysis
 from .sources.site.crawl import crawl
@@ -58,6 +70,11 @@ def check(
             "cookies": cap.cookies,
             "scripts": cap.scripts,
             "requests": cap.requests,
+            "resources": cap.resources,
+            "links": cap.links,
+            "visible_text": cap.visible_text,
+            "url": cap.url,
+            "browser_signals": cap.browser_signals,
             "local_storage": cap.local_storage,
             "session_storage": cap.session_storage,
         }
@@ -68,6 +85,18 @@ def check(
         findings.append(CheckFinding(criterion="RDS-CUC-373", status=s2, note=n2))
         s3, n3 = classify_local_storage(page_signals, audience)
         findings.append(CheckFinding(criterion="RDS-CUC-374", status=s3, note=n3))
+        s375, n375 = classify_device_storage_access(page_signals, audience)
+        findings.append(CheckFinding(criterion="RDS-CUC-375", status=s375, note=n375))
+        s376, n376 = classify_browser_fingerprinting(page_signals, audience)
+        findings.append(CheckFinding(criterion="RDS-CUC-376", status=s376, note=n376))
+        s377, n377 = classify_tracking_mechanisms(page_signals, audience)
+        findings.append(CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377))
+        s4, n4 = classify_advertising(page_signals, audience)
+        findings.append(CheckFinding(criterion="RDS-WER-384", status=s4, note=n4))
+        s5, n5 = classify_outbound_ad_links(page_signals, audience)
+        findings.append(CheckFinding(criterion="RDS-WER-385", status=s5, note=n5))
+        s6, n6 = classify_youth_protection(page_signals, audience)
+        findings.append(CheckFinding(criterion="RDS-VIN-354", status=s6, note=n6))
         findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note="Datenschutzerklärung vs. Cookies abgleichen"))
         findings.extend(check_site_transport(url))
         ipf_analysis = analyze_ipf_site(url)

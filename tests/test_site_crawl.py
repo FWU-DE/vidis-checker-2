@@ -26,14 +26,38 @@ class FakePage:
     def wait_for_load_state(self, state, timeout):
         self.events.append(("wait", state, timeout))
 
+    def add_init_script(self, script):
+        self.events.append(("init_script", "__vidisSignals" in script))
+
     def evaluate(self, script):
+        if "__vidisSignals" in script:
+            return {
+                "fingerprinting": [
+                    {"api": "canvas.toDataURL", "count": 1},
+                    {"api": "navigator.hardwareConcurrency", "count": 2},
+                ],
+                "device_storage": [
+                    {"api": "indexedDB.open", "count": 1},
+                    {"api": "caches.open", "count": 1},
+                ],
+            }
         if "localStorage" in script:
             return {"consent_seen": str(("hook",) in self.events)}
         if "sessionStorage" in script:
             return {"session": "value"}
+        if "querySelectorAll('a[href]')" in script:
+            return [
+                {
+                    "url": "https://ads.example.test/deal?aff_id=1",
+                    "text": "Sponsor Angebot",
+                    "selector": "a.sponsor",
+                }
+            ]
+        if "document.body.innerText" in script:
+            return ["Anzeige: Lernspiel gesponsert von ExampleCo"]
         return [
-            {"type": "script", "url": "https://example.test/app.js"},
-            {"type": "img", "url": "https://example.test/logo.png"},
+            {"type": "script", "url": "https://example.test/app.js", "selector": "script"},
+            {"type": "img", "url": "https://example.test/logo.png", "selector": "img"},
         ]
 
 
@@ -70,6 +94,10 @@ def test_aggregate_captures_deduplicates_cookies_storage_scripts_and_requests():
             session_storage={"tab": "1"},
             scripts=["https://cdn.test/a.js"],
             requests=["https://example.test/", "https://cdn.test/a.js"],
+            browser_signals={
+                "fingerprinting": [{"api": "canvas.toDataURL", "count": 1}],
+                "device_storage": [{"api": "indexedDB.open", "count": 1}],
+            },
         ),
         PageCapture(
             url="https://example.test/about",
@@ -86,6 +114,16 @@ def test_aggregate_captures_deduplicates_cookies_storage_scripts_and_requests():
             session_storage={"tab": "2"},
             scripts=["https://cdn.test/a.js", "https://cdn.test/b.js"],
             requests=["https://example.test/about", "https://cdn.test/a.js"],
+            browser_signals={
+                "fingerprinting": [
+                    {"api": "canvas.toDataURL", "count": 2},
+                    {"api": "WebGLRenderingContext.getParameter", "count": 1},
+                ],
+                "device_storage": [
+                    {"api": "indexedDB.open", "count": 3},
+                    {"api": "serviceWorker.register", "count": 1},
+                ],
+            },
         ),
     ]
 
@@ -108,6 +146,16 @@ def test_aggregate_captures_deduplicates_cookies_storage_scripts_and_requests():
         "https://example.test/",
         "https://example.test/about",
     ]
+    assert aggregate.browser_signals == {
+        "fingerprinting": [
+            {"api": "WebGLRenderingContext.getParameter", "count": 1},
+            {"api": "canvas.toDataURL", "count": 3},
+        ],
+        "device_storage": [
+            {"api": "indexedDB.open", "count": 4},
+            {"api": "serviceWorker.register", "count": 1},
+        ],
+    }
 
 
 def test_capture_page_runs_consent_hook_before_collecting_browser_state():
@@ -128,4 +176,27 @@ def test_capture_page_runs_consent_hook_before_collecting_browser_state():
     assert capture.local_storage == {"consent_seen": "True"}
     assert capture.requests == ["https://example.test/", "https://example.test/app.js"]
     assert capture.scripts == ["https://example.test/app.js"]
+    assert ("init_script", True) in page.events
+    assert capture.browser_signals == {
+        "fingerprinting": [
+            {"api": "canvas.toDataURL", "count": 1},
+            {"api": "navigator.hardwareConcurrency", "count": 2},
+        ],
+        "device_storage": [
+            {"api": "indexedDB.open", "count": 1},
+            {"api": "caches.open", "count": 1},
+        ],
+    }
+    assert capture.resources == [
+        {"type": "script", "url": "https://example.test/app.js", "selector": "script"},
+        {"type": "img", "url": "https://example.test/logo.png", "selector": "img"},
+    ]
+    assert capture.links == [
+        {
+            "url": "https://ads.example.test/deal?aff_id=1",
+            "text": "Sponsor Angebot",
+            "selector": "a.sponsor",
+        }
+    ]
+    assert capture.visible_text == ["Anzeige: Lernspiel gesponsert von ExampleCo"]
 
