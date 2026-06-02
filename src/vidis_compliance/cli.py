@@ -188,6 +188,8 @@ def check(
             )
             raw_capture["rds_cuc_453"] = e453
             by_criterion["RDS-CUC-453"] = CheckFinding(criterion="RDS-CUC-453", status=s453, note=n453)
+            s377, n377 = classify_tracking_mechanisms(page_signals, audience)
+            by_criterion["RDS-CUC-377"] = CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377)
         findings = list(by_criterion.values())
     if agentic:
         if not url:
