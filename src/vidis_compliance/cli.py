@@ -157,6 +157,12 @@ def check(
             "visited_urls": ipf_analysis.visited_urls,
             "impressum_url": ipf_analysis.impressum.url,
             "privacy_url": ipf_analysis.privacy.url,
+            "impressum_found": ipf_analysis.impressum.found_signals,
+            "impressum_missing": ipf_analysis.impressum.missing_signals,
+            "impressum_manual": ipf_analysis.impressum.manual_signals,
+            "privacy_found": ipf_analysis.privacy.found_signals,
+            "privacy_missing": ipf_analysis.privacy.missing_signals,
+            "privacy_manual": ipf_analysis.privacy.manual_signals,
         }
         findings.extend(findings_from_ipf_analysis(ipf_analysis))
     if code_path:

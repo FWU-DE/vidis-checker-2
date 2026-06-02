@@ -50,13 +50,18 @@ def test_ipf_analysis_produces_four_non_placeholder_pass_findings_for_complete_p
     """
     impressum = """
     Impressum Diensteanbieter: Example Learning GmbH, Musterstraße 1, 10115 Berlin.
-    Vertreten durch Geschäftsführerin Erika Muster. Kontakt: info@example.test, Telefon 030 123456.
+    Rechtsform: GmbH. Vertreten durch Geschäftsführerin Erika Muster. Kontakt: info@example.test, Telefon 030 123456.
+    Eingetragen im Handelsregister Berlin, HRB 123456. Umsatzsteuer-ID: DE123456789.
+    Anbieterkennzeichnung nach § 5 DDG.
     """
     privacy = """
-    Datenschutzerklärung. Verantwortlicher ist Example Learning GmbH, Musterstraße 1, Berlin.
+    Datenschutzerklärung. Verantwortlicher ist Example Learning GmbH, Musterstraße 1, Berlin, info@example.test.
     Datenschutzbeauftragter: datenschutz@example.test. Wir erläutern die Zwecke der Verarbeitung,
     die Rechtsgrundlagen nach Art. 6 DSGVO, Empfänger und Auftragsverarbeiter, Speicherdauer und Löschung
-    sowie Betroffenenrechte auf Auskunft, Berichtigung, Löschung und Widerspruch.
+    sowie Betroffenenrechte auf Auskunft, Berichtigung, Löschung, Einschränkung, Widerspruch,
+    Datenübertragbarkeit, Widerruf und Beschwerde bei einer Aufsichtsbehörde.
+    Die Bereitstellung ist für den Vertrag erforderlich; ohne Bereitstellung kann das Angebot nicht genutzt werden.
+    Es findet keine automatisierte Entscheidungsfindung einschließlich Profiling statt.
     """
 
     analysis = analyze_ipf_site(
@@ -118,6 +123,55 @@ def test_ipf_analysis_distinguishes_reachable_but_incomplete_pages():
     assert "fehlend" in findings["RDS-IPF-366"].note.lower()
     assert "kontakt" in findings["RDS-IPF-366"].note.lower()
     assert "rechtsgrundlagen" in findings["RDS-IPF-367"].note.lower()
+
+
+def test_ipf_analysis_uses_legacy_detail_points_for_imprint_and_privacy_policy():
+    home = """
+    <a href="/impressum">Impressum</a>
+    <a href="/datenschutz">Datenschutzerklärung</a>
+    """
+    impressum = """
+    Impressum Example Learning GmbH, Musterstraße 1, 10115 Berlin.
+    Rechtsform: GmbH. Vertreten durch Geschäftsführerin Erika Muster.
+    Kontakt: info@example.test, Telefon 030 123456.
+    Eingetragen im Handelsregister Berlin, HRB 123456. Umsatzsteuer-ID: DE123456789.
+    Anbieterkennzeichnung nach § 5 DDG.
+    """
+    privacy = """
+    Datenschutzerklärung. Verantwortlicher: Example Learning GmbH, Musterstraße 1, Berlin, info@example.test.
+    Datenschutzbeauftragter: datenschutz@example.test. Wir verarbeiten personenbezogene Daten zu Vertragszwecken
+    auf Grundlage von Art. 6 Abs. 1 lit. b DSGVO und Einwilligungen nach Art. 6 Abs. 1 lit. a DSGVO.
+    Empfänger sind Auftragsverarbeiter. Eine Drittlandübermittlung findet nicht statt.
+    Daten werden nach Ablauf der Speicherdauer gelöscht. Betroffene haben Rechte auf Auskunft, Berichtigung,
+    Löschung, Einschränkung, Widerspruch, Datenübertragbarkeit, Widerruf und Beschwerde bei einer Aufsichtsbehörde.
+    Die Bereitstellung ist für den Vertrag erforderlich; ohne Bereitstellung kann das Angebot nicht genutzt werden.
+    Es findet keine automatisierte Entscheidungsfindung einschließlich Profiling statt.
+    """
+
+    analysis = analyze_ipf_site(
+        "https://example.test/",
+        fetch=_fetcher(
+            {
+                "https://example.test/": (200, home),
+                "https://example.test/impressum": (200, impressum),
+                "https://example.test/datenschutz": (200, privacy),
+            }
+        ),
+    )
+    findings = {finding.criterion: finding for finding in findings_from_ipf_analysis(analysis)}
+
+    assert findings["RDS-IPF-366"].status == "PASS"
+    assert "Name und Anschrift (§ 5 Abs. 1 S. 1 DDG)" in findings["RDS-IPF-366"].note
+    assert "Rechtsform/Vertretungsberechtigte (§ 5 Abs. 1 S. 1 DDG)" in findings["RDS-IPF-366"].note
+    assert "Registerangaben (§ 5 Abs. 1 S. 4 DDG)" in findings["RDS-IPF-366"].note
+    assert "Steuer-ID/Wirtschafts-ID (§ 5 Abs. 1 S. 6 DDG)" in findings["RDS-IPF-366"].note
+    assert "Aktueller Rechtsverweis DDG statt TMG" in findings["RDS-IPF-366"].note
+    assert "optional/manuell" in findings["RDS-IPF-366"].note
+
+    assert findings["RDS-IPF-367"].status == "PASS"
+    assert "Name und Kontaktdaten des Verantwortlichen (Art. 13 Abs. 1 lit. a DSGVO)" in findings["RDS-IPF-367"].note
+    assert "Bereitstellungspflicht/Folgen (Art. 13 Abs. 2 lit. e DSGVO)" in findings["RDS-IPF-367"].note
+    assert "Automatisierte Entscheidungsfindung/Profiling (Art. 13 Abs. 2 lit. f DSGVO)" in findings["RDS-IPF-367"].note
 
 
 def test_cli_site_check_writes_ipf_urls_to_capture_and_report(tmp_path: Path, monkeypatch):
@@ -202,3 +256,59 @@ def test_cli_site_check_writes_ipf_urls_to_capture_and_report(tmp_path: Path, mo
     report_text = (tmp_path / "report.md").read_text(encoding="utf-8")
     assert "https://example.test/impressum" in report_text
     assert "https://example.test/datenschutz" in report_text
+
+
+def test_ipf_capture_report_contains_detailed_imprint_and_privacy_evidence(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "crawl",
+        lambda url, pages, headless: PageCapture(
+            url="https://example.test/",
+            cookies=[],
+            local_storage={},
+            session_storage={},
+            scripts=[],
+            requests=[],
+            visited_urls=["https://example.test/"],
+        ),
+    )
+    monkeypatch.setattr(cli, "check_site_transport", lambda url: [])
+    monkeypatch.setattr(
+        cli,
+        "analyze_ipf_site",
+        lambda url: IpfSiteAnalysis(
+            source_url="https://example.test/",
+            visited_urls=["https://example.test/", "https://example.test/impressum", "https://example.test/datenschutz"],
+            impressum=LegalPageResult(
+                kind="impressum",
+                url="https://example.test/impressum",
+                reachable=True,
+                status_code=200,
+                found_signals=["Name und Anschrift (§ 5 Abs. 1 S. 1 DDG)", "Kontaktangaben inkl. E-Mail (§ 5 Abs. 1 S. 2 DDG)"],
+                missing_signals=["Registerangaben (§ 5 Abs. 1 S. 4 DDG)"],
+                manual_signals=["Aufsichtsbehörde bei zulassungspflichtiger Tätigkeit (§ 5 Abs. 1 S. 3 DDG)"],
+            ),
+            privacy=LegalPageResult(
+                kind="privacy",
+                url="https://example.test/datenschutz",
+                reachable=True,
+                status_code=200,
+                found_signals=["Name und Kontaktdaten des Verantwortlichen (Art. 13 Abs. 1 lit. a DSGVO)"],
+                missing_signals=["Speicherdauer/Kriterien (Art. 13 Abs. 2 lit. a DSGVO)"],
+                manual_signals=["Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO)"],
+            ),
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["check", "--url", "https://example.test/", "--output", "ipfdetail", "--md", str(tmp_path / "report.md")])
+
+    assert result.exit_code == 0, result.output
+    capture = json.loads((tmp_path / "results" / "ipfdetail" / "capture.json").read_text(encoding="utf-8"))
+    assert capture["ipf"]["impressum_found"] == ["Name und Anschrift (§ 5 Abs. 1 S. 1 DDG)", "Kontaktangaben inkl. E-Mail (§ 5 Abs. 1 S. 2 DDG)"]
+    assert capture["ipf"]["privacy_missing"] == ["Speicherdauer/Kriterien (Art. 13 Abs. 2 lit. a DSGVO)"]
+    report_text = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert "Impressum: gefunden" in report_text
+    assert "Registerangaben (§ 5 Abs. 1 S. 4 DDG)" in report_text
+    assert "Datenschutzerklärung: manuell zu prüfen" in report_text
+    assert "Datenschutzbeauftragter-Kontakt, falls bestellt" in report_text

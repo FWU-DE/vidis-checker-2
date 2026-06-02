@@ -236,6 +236,7 @@ def _evidence_for_finding(
         ipf = raw_capture.get("ipf") or {}
         if ipf.get("impressum_url"):
             evidence.append(EvidenceItem("Impressum-URL", str(ipf["impressum_url"])))
+        _append_ipf_evidence(evidence, ipf, "impressum", "Impressum")
         visited = ipf.get("visited_urls") or []
         if visited:
             evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
@@ -243,12 +244,25 @@ def _evidence_for_finding(
         ipf = raw_capture.get("ipf") or {}
         if ipf.get("privacy_url"):
             evidence.append(EvidenceItem("Datenschutzerklärung-URL", str(ipf["privacy_url"])))
+        _append_ipf_evidence(evidence, ipf, "privacy", "Datenschutzerklärung")
         visited = ipf.get("visited_urls") or []
         if visited:
             evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
     _append_external_audit_evidence(evidence, raw_capture)
     _append_screenshot_evidence(evidence, raw_capture, finding.criterion)
     return evidence
+
+
+def _append_ipf_evidence(evidence: list[EvidenceItem], ipf: dict[str, Any], key: str, label: str) -> None:
+    found = ipf.get(f"{key}_found") or []
+    missing = ipf.get(f"{key}_missing") or []
+    manual = ipf.get(f"{key}_manual") or []
+    if found:
+        evidence.append(EvidenceItem(f"{label}: gefunden", "; ".join(str(item) for item in found)))
+    if missing:
+        evidence.append(EvidenceItem(f"{label}: fehlend", "; ".join(str(item) for item in missing)))
+    if manual:
+        evidence.append(EvidenceItem(f"{label}: manuell zu prüfen", "; ".join(str(item) for item in manual)))
 
 
 def _append_external_audit_evidence(evidence: list[EvidenceItem], raw_capture: dict[str, Any]) -> None:

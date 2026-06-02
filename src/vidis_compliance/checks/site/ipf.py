@@ -23,6 +23,7 @@ class LegalPageResult:
     status_code: int | None = None
     found_signals: list[str] = field(default_factory=list)
     missing_signals: list[str] = field(default_factory=list)
+    manual_signals: list[str] = field(default_factory=list)
     error: str = ""
 
 
@@ -137,33 +138,63 @@ def _contains_any(text: str, terms: list[str]) -> bool:
     return any(term.casefold() in text for term in terms)
 
 
+def _contains_regex(text: str, pattern: str) -> bool:
+    return bool(re.search(pattern, text, flags=re.I | re.S))
+
+
 def _impressum_signals(text: str) -> dict[str, bool]:
+    has_identity = _contains_any(text, ["diensteanbieter", "anbieter", "impressum", "gmbh", "ug", "ag", "e.v.", "inhaber"])
+    has_address = bool(re.search(r"\b\d{5}\b", text)) or _contains_any(text, ["straße", "strasse", "platz", "weg", "allee", "anschrift", "sitz"])
     return {
-        "Anbieter/Identität": _contains_any(
+        "Name und Anschrift (§ 5 Abs. 1 S. 1 DDG)": has_identity and has_address,
+        "Rechtsform/Vertretungsberechtigte (§ 5 Abs. 1 S. 1 DDG)": _contains_any(
             text,
-            ["diensteanbieter", "anbieter", "vertreten durch", "gmbh", "ug", "ag", "e.v.", "inhaber"],
+            ["gmbh", "ug", "ag", "e.v.", "rechtsform", "vertreten durch", "geschäftsführ", "geschaeftsfuehr", "vorstand", "inhaber"],
         ),
-        "Anschrift": bool(re.search(r"\b\d{5}\b", text))
-        or _contains_any(text, ["straße", "strasse", "platz", "weg", "allee", "anschrift", "sitz"]),
-        "Kontakt": _has_email_or_phone(text) or _contains_any(text, ["kontakt", "e-mail", "email"]),
+        "Kontaktangaben inkl. E-Mail (§ 5 Abs. 1 S. 2 DDG)": _has_email_or_phone(text) or _contains_any(text, ["kontakt", "e-mail", "email"]),
+        "Registerangaben (§ 5 Abs. 1 S. 4 DDG)": _contains_regex(text, r"\b(?:hrb|hra|vr|pr)\s*\d+")
+        or _contains_any(text, ["handelsregister", "vereinsregister", "partnerschaftsregister", "registergericht", "registernummer"]),
+        "Steuer-ID/Wirtschafts-ID (§ 5 Abs. 1 S. 6 DDG)": _contains_any(
+            text,
+            ["umsatzsteuer-id", "ust-id", "ustid", "ust-idnr", "wirtschafts-identifikationsnummer", "wirtschafts-id", "steuer-id"],
+        ),
+        "Aktueller Rechtsverweis DDG statt TMG": "tmg" not in text and ("ddg" in text or "digitale-dienste-gesetz" in text or "digitale dienste gesetz" in text),
     }
+
+
+def _impressum_manual_signals(text: str) -> list[str]:
+    signals: list[str] = []
+    if not _contains_any(text, ["aufsichtsbehörde", "aufsichtsbehoerde", "regulierungsbehörde", "regulierungsbehoerde", "zulassung"]):
+        signals.append("Aufsichtsbehörde bei zulassungspflichtiger Tätigkeit (§ 5 Abs. 1 S. 3 DDG) — optional/manuell")
+    if not _contains_any(text, ["audiovisueller mediendienst", "medienstaatsvertrag", "mstv", "sitzland", "landesmedienanstalt"]):
+        signals.append("Audiovisuelle Mediendienste/Sitzland und Regulierungsbehörde (§ 5 Abs. 1 S. 8 DDG) — optional/manuell")
+    return signals
 
 
 def _privacy_signals(text: str) -> dict[str, bool]:
     return {
-        "Verantwortlicher": _contains_any(text, ["verantwortlich", "controller", "anbieter", "betreiber"]),
-        "DSB/Kontakt": _contains_any(
+        "Name und Kontaktdaten des Verantwortlichen (Art. 13 Abs. 1 lit. a DSGVO)": _contains_any(text, ["verantwortlich", "controller", "anbieter", "betreiber"])
+        and (_has_email_or_phone(text) or _contains_any(text, ["anschrift", "straße", "strasse", "kontakt"])),
+        "Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO)": _contains_any(
             text,
             ["datenschutzbeauftrag", "data protection officer", "datenschutz@", "dsb@"],
         )
         or _has_email_or_phone(text),
-        "Zwecke": _contains_any(text, ["zweck", "purposes", "verarbeiten", "verarbeitung"]),
-        "Rechtsgrundlagen": _contains_any(text, ["rechtsgrundlage", "art. 6", "artikel 6", "legitimate", "einwilligung"]),
-        "Empfänger": _contains_any(text, ["empfänger", "recipient", "auftragsverarbeiter", "processor", "dritte"]),
-        "Speicherdauer": _contains_any(text, ["speicherdauer", "löschung", "loeschung", "retention", "aufbewahrung"]),
-        "Betroffenenrechte": _contains_any(
+        "Verarbeitungszwecke (Art. 13 Abs. 1 lit. c DSGVO)": _contains_any(text, ["zweck", "purposes", "verarbeiten", "verarbeitung"]),
+        "Rechtsgrundlagen (Art. 13 Abs. 1 lit. c DSGVO)": _contains_any(text, ["rechtsgrundlage", "art. 6", "artikel 6", "legitimate", "einwilligung"]),
+        "Empfänger/Kategorien (Art. 13 Abs. 1 lit. e DSGVO)": _contains_any(text, ["empfänger", "recipient", "auftragsverarbeiter", "processor", "dritte"]),
+        "Speicherdauer/Kriterien (Art. 13 Abs. 2 lit. a DSGVO)": _contains_any(text, ["speicherdauer", "löschung", "loeschung", "retention", "aufbewahrung"]),
+        "Betroffenenrechte inkl. Beschwerde/Widerruf (Art. 13 Abs. 2 lit. b-d DSGVO)": _contains_any(
             text,
-            ["betroffenenrechte", "auskunft", "berichtigung", "löschung", "loeschung", "widerspruch", "datenübertragbarkeit"],
+            ["betroffenenrechte", "auskunft", "berichtigung", "löschung", "loeschung", "widerspruch", "datenübertragbarkeit", "beschwerde", "widerruf"],
+        ),
+        "Bereitstellungspflicht/Folgen (Art. 13 Abs. 2 lit. e DSGVO)": _contains_any(
+            text,
+            ["bereitstellung", "vertraglich vorgeschrieben", "gesetzlich vorgeschrieben", "vertragsabschluss", "nichtbereitstellung", "ohne bereitstellung"],
+        ),
+        "Automatisierte Entscheidungsfindung/Profiling (Art. 13 Abs. 2 lit. f DSGVO)": _contains_any(
+            text,
+            ["automatisierte entscheidungsfindung", "profiling", "artikel 22", "art. 22", "keine automatisierte"],
         ),
     }
 
@@ -180,6 +211,7 @@ def _result_for_page(kind: str, url: str, fetch: Fetcher) -> LegalPageResult:
     signals = _impressum_signals(text) if kind == "impressum" else _privacy_signals(text)
     found = [name for name, present in signals.items() if present]
     missing = [name for name, present in signals.items() if not present]
+    manual = _impressum_manual_signals(text) if kind == "impressum" else []
     return LegalPageResult(
         kind=kind,
         url=url,
@@ -187,6 +219,7 @@ def _result_for_page(kind: str, url: str, fetch: Fetcher) -> LegalPageResult:
         status_code=status_code,
         found_signals=found,
         missing_signals=missing,
+        manual_signals=manual,
     )
 
 
@@ -247,15 +280,19 @@ def _completeness_finding(criterion: str, label: str, page: LegalPageResult) -> 
     if page.missing_signals:
         found = ", ".join(page.found_signals) or "keine Pflichtsignale"
         missing = ", ".join(page.missing_signals)
+        note = f"{label} unvollständig: {page.url}; gefunden: {found}; fehlend: {missing}"
+        if page.manual_signals:
+            note += f"; manuell zu prüfen: {', '.join(page.manual_signals)}"
         return CheckFinding(
             criterion=criterion,
             status="FAIL",
-            note=f"{label} unvollständig: {page.url}; gefunden: {found}; fehlend: {missing}",
+            note=note,
         )
+    manual = f"; manuell zu prüfen: {', '.join(page.manual_signals)}" if page.manual_signals else ""
     return CheckFinding(
         criterion=criterion,
         status="PASS",
-        note=f"{label} vollständig wirkend: {page.url}; Signale: {', '.join(page.found_signals)}",
+        note=f"{label} vollständig wirkend: {page.url}; Signale: {', '.join(page.found_signals)}{manual}",
     )
 
 
