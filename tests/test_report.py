@@ -170,6 +170,36 @@ def test_generate_pdf_writes_non_empty_report(tmp_path: Path) -> None:
     assert output.stat().st_size > 1000
 
 
+def test_generate_pdf_groups_cookie_and_browser_storage_evidence_once(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[
+            CheckFinding(criterion="RDS-CUC-371", status="MANUELL", note="Speicher prüfen"),
+            CheckFinding(criterion="RDS-CUC-374", status="MANUELL", note="Storage prüfen"),
+        ],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(
+        result,
+        output,
+        raw_capture={
+            "cookies": [{"name": "_ga"}],
+            "local_storage": {"matomo.id": "secret"},
+            "session_storage": {"csrf_token": "secret"},
+        },
+    )
+
+    text = subprocess.run(["pdftotext", str(output), "-"], check=True, text=True, capture_output=True).stdout
+    assert text.count("Gemeinsame Cookie- und Browser-Storage-Bewertung") == 1
+    assert "Betroffene Kriterien" in text
+    assert "RDS-CUC-371, RDS-CUC-374" in text
+    assert text.count("Cookie: _ga") == 1
+    assert text.count("LocalStorage: matomo.id") == 1
+    assert text.count("SessionStorage: csrf_token") == 1
+    assert "secret" not in text
+
+
 def test_generate_pdf_embeds_public_screenshot_and_shortens_noisy_evidence(tmp_path: Path) -> None:
     screenshot = tmp_path / "page-1.png"
     screenshot.write_bytes(PNG_1X1)
@@ -236,7 +266,7 @@ def test_generate_markdown_lists_rds_cuc_453_description_matches_and_misses(tmp_
     assert "secret" not in text
 
 
-def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_path: Path) -> None:
+def test_generate_markdown_groups_cookie_local_and_session_storage_evidence_once(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",
         findings=[
@@ -244,7 +274,17 @@ def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_p
                 criterion="RDS-CUC-371",
                 status="FAIL",
                 note="Nicht essenzielle Speicher: _ga, matomo.id, IDE",
-            )
+            ),
+            CheckFinding(
+                criterion="RDS-CUC-372",
+                status="FAIL",
+                note="Nicht essenzielle Speicher: _ga, matomo.id, IDE",
+            ),
+            CheckFinding(
+                criterion="RDS-CUC-374",
+                status="MANUELL",
+                note="Unbekannter Browser-Storage: matomo.id",
+            ),
         ],
     )
     raw_capture = {
@@ -261,14 +301,20 @@ def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_p
     generate_markdown(result, output, raw_capture=raw_capture)
 
     text = output.read_text(encoding="utf-8")
-    assert "| Cookie: _ga | nicht essenziell — Google Analytics / Analytics" in text
-    assert "| Cookie: CookieConsent | essenziell — Cookiebot / Functional" in text
-    assert "| Cookie: unknown_cookie | manuell prüfen — Keine Einstufung in cookie_db.json/Heuristik" in text
-    assert "| LocalStorage: matomo.id | nicht essenziell — Heuristik: Tracking-/Analyse-Storage" in text
-    assert "| LocalStorage: CookieConsentBulkSetting-abc | essenziell — Cookiebot / Functional" in text
-    assert "| SessionStorage: IDE | nicht essenziell — DoubleClick/Google Marketing / Marketing" in text
-    assert "| SessionStorage: csrf_token | essenziell — Allowlist-Präfix" in text
+    assert text.count("## Gemeinsame Cookie- und Browser-Storage-Bewertung") == 1
+    shared_section = text.split("## Gemeinsame Cookie- und Browser-Storage-Bewertung", 1)[1].split("## Kriterienbewertung", 1)[0]
+    criteria_section = text.split("## Kriterienbewertung", 1)[1]
+    assert "| Betroffene Kriterien | RDS-CUC-371, RDS-CUC-372, RDS-CUC-374 |" in shared_section
+    assert "| Cookie: _ga | nicht essenziell — Google Analytics / Analytics" in shared_section
+    assert "| Cookie: CookieConsent | essenziell — Cookiebot / Functional" in shared_section
+    assert "| Cookie: unknown_cookie | manuell prüfen — Keine Einstufung in cookie_db.json/Heuristik" in shared_section
+    assert "| LocalStorage: matomo.id | nicht essenziell — Heuristik: Tracking-/Analyse-Storage" in shared_section
+    assert "| LocalStorage: CookieConsentBulkSetting-abc | essenziell — Cookiebot / Functional" in shared_section
+    assert "| SessionStorage: IDE | nicht essenziell — DoubleClick/Google Marketing / Marketing" in shared_section
+    assert "| SessionStorage: csrf_token | essenziell — Allowlist-Präfix" in shared_section
     assert "secret" not in text
+    assert "| Cookie: _ga |" not in text_section(criteria_section, "### RDS-CUC-371:")
+    assert "| LocalStorage: matomo.id |" not in text_section(criteria_section, "### RDS-CUC-374:")
 
 
 

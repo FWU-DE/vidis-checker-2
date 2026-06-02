@@ -21,6 +21,8 @@ SEMANTIC_EVALUATION_DISCLAIMER = (
 )
 SEMANTIC_EVALUATION_PREFIXES = ("RDS-IPF-", "RDS-AGB-", "RDS-WER-", "RDS-VIN-")
 SEMANTIC_EVALUATION_CODES = {"RDS-DSO-383", "RDS-DEV-380", "RDS-DEV-466", "RDS-SPE-370", "RDS-CUC-453"}
+COOKIE_STORAGE_SECTION_CRITERIA = {"RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-374", "RDS-CUC-377", "RDS-CUC-453"}
+COOKIE_STORAGE_SECTION_ORDER = ("RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-374", "RDS-CUC-377", "RDS-CUC-453")
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,27 @@ class ReportDocument:
         if any(_is_semantic_evaluation(report.criterion.code) for report in self.criteria_reports):
             return SEMANTIC_EVALUATION_DISCLAIMER
         return ""
+
+    @property
+    def cookie_storage_evidence(self) -> list[EvidenceItem]:
+        if not self.raw_capture:
+            return []
+        covered = sorted(
+            {finding.criterion for finding in self.result.findings if finding.criterion in COOKIE_STORAGE_SECTION_CRITERIA},
+            key=lambda code: COOKIE_STORAGE_SECTION_ORDER.index(code),
+        )
+        if not covered:
+            covered = [code for code in COOKIE_STORAGE_SECTION_ORDER if code in self.criteria.items]
+        evidence = [EvidenceItem("Betroffene Kriterien", ", ".join(covered))]
+        evidence.extend(_cookie_storage_inventory_evidence(self.raw_capture))
+        cuc_453 = self.raw_capture.get("rds_cuc_453") or {}
+        if cuc_453.get("observed"):
+            evidence.append(EvidenceItem("RDS-CUC-453 Inventar", ", ".join(cuc_453["observed"])))
+        if cuc_453.get("present"):
+            evidence.append(EvidenceItem("Beschriebene Cookies/Speicher", ", ".join(cuc_453["present"])))
+        if cuc_453.get("missing"):
+            evidence.append(EvidenceItem("Fehlende Beschreibungen", ", ".join(cuc_453["missing"])))
+        return evidence
 
 
 def load_criteria(path: Path = CRITERIA_PATH) -> CriteriaIndex:
@@ -213,13 +236,9 @@ def _evidence_for_finding(
         return evidence
 
     if finding.criterion in {"RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-453"}:
-        evidence.extend(_cookie_storage_inventory_evidence(raw_capture))
+        evidence.append(EvidenceItem("Gemeinsamer Abschnitt", "Cookie- und Browser-Storage-Bewertung siehe Zusammenfassung vor der Kriterienbewertung."))
         if finding.criterion == "RDS-CUC-453":
             cuc_453 = raw_capture.get("rds_cuc_453") or {}
-            if cuc_453.get("observed"):
-                evidence.append(EvidenceItem("RDS-CUC-453 Inventar", ", ".join(cuc_453["observed"])))
-            if cuc_453.get("present"):
-                evidence.append(EvidenceItem("Beschriebene Cookies/Speicher", ", ".join(cuc_453["present"])))
             if cuc_453.get("missing"):
                 evidence.append(EvidenceItem("Fehlende Beschreibungen", ", ".join(cuc_453["missing"])))
     if finding.criterion == "RDS-CUC-373":
@@ -228,7 +247,7 @@ def _evidence_for_finding(
         evidence.append(EvidenceItem("Netzwerkanfragen", str(len(requests))))
         evidence.append(EvidenceItem("Skriptquellen", str(len(scripts))))
     if finding.criterion == "RDS-CUC-374":
-        evidence.extend(_cookie_storage_inventory_evidence(raw_capture, include_cookies=False))
+        evidence.append(EvidenceItem("Gemeinsamer Abschnitt", "Cookie- und Browser-Storage-Bewertung siehe Zusammenfassung vor der Kriterienbewertung."))
     if finding.criterion in {"RDS-CUC-375", "RDS-CUC-376", "RDS-CUC-377"}:
         browser_signals = raw_capture.get("browser_signals") or {}
         device_storage = browser_signals.get("device_storage") or []
@@ -241,7 +260,7 @@ def _evidence_for_finding(
             requests = raw_capture.get("requests") or []
             scripts = raw_capture.get("scripts") or []
             document_capture = raw_capture.get("document_capture") or {}
-            evidence.extend(_cookie_storage_inventory_evidence(raw_capture))
+            evidence.append(EvidenceItem("Gemeinsamer Abschnitt", "Cookie- und Browser-Storage-Bewertung siehe Zusammenfassung vor der Kriterienbewertung."))
             evidence.append(EvidenceItem("Netzwerkanfragen", str(len(requests))))
             evidence.append(EvidenceItem("Skriptquellen", str(len(scripts))))
             snippets = (document_capture.get("evidence") or {}).get("RDS-CUC-377") if isinstance(document_capture, dict) else None

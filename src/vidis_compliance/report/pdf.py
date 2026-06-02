@@ -75,6 +75,7 @@ def render_pdf(document: ReportDocument, output_pdf: Path) -> None:
 
     story.extend(_cover(document, counts, styles))
     story.extend(_screenshot_overview(document, styles))
+    story.extend(_cookie_storage_overview(document, styles))
     story.append(Paragraph("Kriterienbewertung", styles["SectionTitle"]))
     for report in document.criteria_reports:
         criterion = report.criterion
@@ -201,6 +202,22 @@ def _screenshot_overview(document: ReportDocument, styles) -> list:
             styles["BodyText"],
         ),
         _screenshot_index_table(screenshots),
+        Spacer(1, 0.45 * cm),
+    ]
+
+
+def _cookie_storage_overview(document: ReportDocument, styles) -> list:
+    evidence = document.cookie_storage_evidence
+    if not evidence:
+        return []
+    return [
+        Paragraph("Gemeinsame Cookie- und Browser-Storage-Bewertung", styles["SectionTitle"]),
+        Paragraph(
+            "Diese Übersicht fasst Cookies, localStorage und sessionStorage für die betroffenen CUC-Kriterien zusammen. "
+            "Storage-Werte werden nicht ausgegeben.",
+            styles["BodyText"],
+        ),
+        _evidence_table(evidence),
         Spacer(1, 0.45 * cm),
     ]
 
