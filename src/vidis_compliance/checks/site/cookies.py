@@ -20,6 +20,32 @@ STORAGE_TRACKER_KEYS = [
     'ga:', 'ajs:', 'amplitude', 'mixpanel', 'hj-session', 'fb', 'clarity', 'matomo', 'piwik', '_ga'
 ]
 
+RDS_CUC_377_CRITERION_INFO = (
+    "RDS-CUC-377 Trackingmechanismen zu nicht pädagogischen Zwecken: "
+    "Es werden keine Trackingmechanismen eingesetzt, wenn sich ein Angebot an Schülerinnen und Schüler richtet, "
+    "es sei denn, das Nutzerverhalten wird aus pädagogischen Gründen getrackt, wie z. B. bei adaptiven Lernsystemen notwendig. "
+    "Richtet sich das Angebot an Lehrkräfte, wird dafür eine entsprechende Einwilligung eingeholt."
+)
+
+RDS_CUC_377_REVIEW_QUESTIONS = (
+    "Fehlende Nachweise: Welche Zielgruppe nutzt die geprüfte Oberfläche? "
+    "Welche pädagogische Notwendigkeit rechtfertigt diese Signale? "
+    "Welche Produkt-/Dokument-Evidenz belegt adaptive Lernfunktionen oder eine Lehrkräfte-Einwilligung?"
+)
+
+PEDAGOGICAL_PURPOSE_TERMS = (
+    "adaptives lernsystem",
+    "adaptive lern",
+    "lernstandsdiagnose",
+    "lernstand",
+    "lernfortschritt",
+    "pädagogische anpassung",
+    "paedagogische anpassung",
+    "pädagogischen gründen",
+    "paedagogischen gruenden",
+    "didaktisch",
+)
+
 ALLOWED_STORAGE_PREFIXES = [
     'cookieconsent',
     'cookiebot',
@@ -256,12 +282,105 @@ def classify_browser_fingerprinting(data: Dict[str, Any], audience: str) -> Tupl
     return 'PASS', 'Keine Browserfingerprinting-/Entropy-API-Nutzung erkannt'
 
 
+def _short_signal(value: str, max_len: int = 96) -> str:
+    value = " ".join(str(value).strip().split())
+    return value if len(value) <= max_len else value[: max_len - 1] + "…"
+
+
+def _signal_api_summaries_for_377(data: Dict[str, Any], group: str) -> list[str]:
+    signals = data.get('browser_signals') or {}
+    summaries: list[str] = []
+    for item in signals.get(group, []):
+        if not isinstance(item, dict):
+            continue
+        api = str(item.get('api') or '').strip()
+        if not api:
+            continue
+        count = item.get('count')
+        summaries.append(f"{api} ({count}×)" if count else api)
+    return sorted(set(summaries))
+
+
+def _non_essential_inventory_for_377(data: Dict[str, Any]) -> list[str]:
+    database = get_default_cookie_database()
+    hits: list[str] = []
+    for cookie in data.get('cookies') or []:
+        if not isinstance(cookie, dict):
+            continue
+        name = str(cookie.get('name') or '').strip()
+        if not name:
+            continue
+        bucket, detail = _classify_name(name, database)
+        if bucket == "non_essential":
+            hits.append("Cookie: " + detail)
+    for label, values in (("LocalStorage", data.get('local_storage') or {}), ("SessionStorage", data.get('session_storage') or {})):
+        if not isinstance(values, dict):
+            continue
+        for key in sorted({str(k).strip() for k in values.keys() if str(k).strip()}):
+            bucket, detail = _classify_name(key, database)
+            if bucket == "non_essential":
+                hits.append(f"{label}: {detail}")
+    return sorted(set(hits))
+
+
+def _known_tracker_hits_for_377(data: Dict[str, Any]) -> list[str]:
+    hits: list[str] = []
+    values = [str(value) for value in (data.get('scripts') or [])] + [str(value) for value in (data.get('requests') or [])]
+    values += [str(resource.get('url') or '') for resource in (data.get('resources') or []) if isinstance(resource, dict)]
+    for value in values:
+        lowered = value.lower()
+        if any(snippet in lowered for snippet in TRACKER_SCRIPT_SNIPPETS):
+            hits.append(_short_signal(value))
+    return sorted(set(hits))
+
+
+def _pedagogical_context_snippet_for_377(data: Dict[str, Any]) -> str:
+    candidates = [
+        data.get("product_context"),
+        data.get("tracking_purpose"),
+        data.get("pedagogical_purpose"),
+    ]
+    document_capture = data.get("document_capture") or {}
+    if isinstance(document_capture, dict):
+        candidates.extend(str(snippet) for snippets in (document_capture.get("evidence") or {}).values() for snippet in (snippets or []))
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        lowered = text.lower()
+        if text and any(term in lowered for term in PEDAGOGICAL_PURPOSE_TERMS):
+            return text[:240]
+    return ""
+
+
 def classify_tracking_mechanisms(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
-    """RDS-CUC-377: known tracker requests remain FAIL for SuS; generic fingerprinting APIs stay MANUELL."""
-    tracker_status, tracker_note = classify_tracking_pixel(data, audience)
-    if tracker_status == 'FAIL':
-        return tracker_status, tracker_note
-    fp_hits = _signal_api_names(data, 'fingerprinting')
-    if fp_hits:
-        return 'MANUELL', f"Potenzielle Tracking-/Fingerprintingmechanismen: {', '.join(fp_hits[:10])}"
-    return tracker_status, tracker_note
+    """RDS-CUC-377: aggregate tracker evidence and require explicit pedagogical-purpose context."""
+    tracker_hits = _known_tracker_hits_for_377(data)
+    non_essential_hits = _non_essential_inventory_for_377(data)
+    fingerprinting_hits = _signal_api_summaries_for_377(data, 'fingerprinting')
+    purpose = _pedagogical_context_snippet_for_377(data)
+    tracking_evidence = tracker_hits + non_essential_hits
+
+    if tracking_evidence and purpose:
+        return (
+            'PASS',
+            f"{RDS_CUC_377_CRITERION_INFO}; expliziter pädagogischer Zweck belegt: {purpose}; "
+            f"technische Tracking-Signale: {', '.join(tracking_evidence[:10])}",
+        )
+    if tracking_evidence:
+        note = (
+            f"{RDS_CUC_377_CRITERION_INFO}; nicht pädagogische Trackingmechanismen ohne belastbare Zweck-Evidenz: "
+            + ", ".join(tracking_evidence[:12])
+            + "; "
+            + RDS_CUC_377_REVIEW_QUESTIONS
+        )
+        if _is_sus_audience(audience):
+            return 'FAIL', note
+        return 'MANUELL', note + " Lehrkräfte-Kontext: Einwilligung dokumentiert nachweisen."
+    if fingerprinting_hits:
+        return (
+            'MANUELL',
+            f"{RDS_CUC_377_CRITERION_INFO}; potenzielle Tracking-/Fingerprintingmechanismen: "
+            + ", ".join(fingerprinting_hits[:10])
+            + "; "
+            + RDS_CUC_377_REVIEW_QUESTIONS,
+        )
+    return 'PASS', f"{RDS_CUC_377_CRITERION_INFO}; Keine Trackingmechanismen aus Cookies, Requests, Skripten, Storage oder Fingerprinting-Signalen erkannt"

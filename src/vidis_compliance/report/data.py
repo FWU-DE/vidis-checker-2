@@ -179,6 +179,21 @@ def _evidence_for_finding(
             evidence.append(EvidenceItem("Device-/Browser-Storage-APIs", _api_signal_summary(device_storage)))
         if finding.criterion in {"RDS-CUC-376", "RDS-CUC-377"}:
             evidence.append(EvidenceItem("Fingerprinting-/Entropy-APIs", _api_signal_summary(fingerprinting)))
+        if finding.criterion == "RDS-CUC-377":
+            cookies = raw_capture.get("cookies") or []
+            local_storage = raw_capture.get("local_storage") or {}
+            session_storage = raw_capture.get("session_storage") or {}
+            requests = raw_capture.get("requests") or []
+            scripts = raw_capture.get("scripts") or []
+            document_capture = raw_capture.get("document_capture") or {}
+            evidence.append(EvidenceItem("Cookie-Namen", ", ".join(sorted({str(c.get("name", "")) for c in cookies if c.get("name")})) or "—"))
+            evidence.append(EvidenceItem("LocalStorage-Schlüssel", ", ".join(sorted(local_storage.keys())) or "—"))
+            evidence.append(EvidenceItem("SessionStorage-Schlüssel", ", ".join(sorted(session_storage.keys())) or "—"))
+            evidence.append(EvidenceItem("Netzwerkanfragen", str(len(requests))))
+            evidence.append(EvidenceItem("Skriptquellen", str(len(scripts))))
+            snippets = (document_capture.get("evidence") or {}).get("RDS-CUC-377") if isinstance(document_capture, dict) else None
+            if snippets:
+                evidence.append(EvidenceItem("Produkt-/Dokument-Evidenz RDS-CUC-377", " | ".join(str(snippet) for snippet in snippets[:3])))
     if finding.criterion in {"ITS-ENC-359", "ITS-ENC-360"}:
         if raw_capture.get("url"):
             evidence.append(EvidenceItem("Erfasste URL", str(raw_capture["url"])))

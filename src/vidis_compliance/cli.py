@@ -145,6 +145,20 @@ def check(
         by_criterion = {finding.criterion: finding for finding in findings}
         for finding in document_findings:
             by_criterion[finding.criterion] = finding
+        if raw_capture is not None:
+            raw_capture["document_capture"] = document_capture
+            page_signals = {
+                "cookies": raw_capture.get("cookies") or [],
+                "scripts": raw_capture.get("scripts") or [],
+                "requests": raw_capture.get("requests") or [],
+                "resources": raw_capture.get("resources") or [],
+                "browser_signals": raw_capture.get("browser_signals") or {},
+                "local_storage": raw_capture.get("local_storage") or {},
+                "session_storage": raw_capture.get("session_storage") or {},
+                "document_capture": document_capture,
+            }
+            s377, n377 = classify_tracking_mechanisms(page_signals, audience)
+            by_criterion["RDS-CUC-377"] = CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377)
         findings = list(by_criterion.values())
     if agentic:
         if not url:

@@ -1,6 +1,6 @@
 {
   "title": "VIDIS Coverage Matrix",
-  "generated_at": "2026-06-02T12:45:47+00:00",
+  "generated_at": "2026-06-02T13:22:59+00:00",
   "criteria_registry": "src/vidis_compliance/criteria/vidis_v0_2.yaml",
   "columns": [
     "code",
@@ -120,11 +120,11 @@
       "platform_status": "browser and cookie checks",
       "implementation_status": "partially automated",
       "new_platform_status": "partially automated",
-      "input_needed": "target URL, source-code path, human context review.",
-      "automation_level": "automated signal collection plus manual decision",
-      "evidence_artifacts": "result.json, Markdown/PDF report, capture.json, code_capture.json.",
-      "cli_api_availability": "CLI: vidis check; reports: vidis-report report; API: FastAPI job endpoints for async runs.",
-      "known_limitations": "Nicht-pädagogischer Zweck ist nur mit Produktkontext sicher bewertbar."
+      "input_needed": "target URL plus product-context evidence in local documents or AGB/privacy/AVV URLs; human review if purpose remains ambiguous.",
+      "automation_level": "automated evidence aggregation; PASS/FAIL only when tracker absence, known non-pedagogical tracking, or explicit pedagogical-purpose context is available",
+      "evidence_artifacts": "result.json, Markdown/PDF report, capture.json, code_capture.json, document_capture.json.",
+      "cli_api_availability": "CLI: vidis check; reports: vidis-report report; API: FastAPI job endpoints for async runs; document URL/file inputs available in CLI.",
+      "known_limitations": "Pedagogical purpose cannot be inferred from browser signals alone; provide product documentation or treat ambiguous tracking/fingerprinting as MANUELL."
     },
     {
       "kind": "criterion",

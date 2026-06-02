@@ -265,6 +265,7 @@ uv run pytest -q</code></pre>
         </tbody>
       </table>
       <p>Für <code>RDS-CUC-371</code>/<code>RDS-CUC-372</code> bewertet der Website-Check Cookies, <code>localStorage</code> und <code>sessionStorage</code> gemeinsam. Namen werden gegen die gebündelte Cookie-Datenbank sowie erlaubte funktionale/security-nahe Speicher-Präfixe geprüft; Reports listen die gefundenen Cookie- und Storage-Schlüssel ohne Storage-Werte auf.</p>
+      <p>Für <code>RDS-CUC-377</code> aggregiert der Check Cookies, bekannte Tracker-Requests/-Skripte, Storage-Schlüssel, Tracking-Pixel und Fingerprinting-Signale zu einem eigenen Entscheidungsweg. In SuS-Kontexten führen bekannte Werbe-/Analyse-/Trackermechanismen ohne belastbare pädagogische Zweck-Evidenz zu <code>FAIL</code>. Wird über lokale Dokumente oder AGB-/Datenschutz-/AVV-URLs ein adaptives Lernsystem, Lernstandsdiagnose oder eine andere pädagogische Notwendigkeit belegt, kann derselbe technische Befund als <code>PASS</code> dokumentiert werden; unklare Fingerprinting- oder Zwecklagen bleiben <code>MANUELL</code> mit vollständigem Kriteriumstext und offenen Nachweisfragen.</p>
       <h3>Beispielansichten</h3>
       <div class="grid">
         <figure class="card">
@@ -319,7 +320,7 @@ uv run vidis check \
   --json docs/results/coverage_matrix.json \
   --html docs/results/coverage_matrix.html</code></pre>
       <p>Öffnen: <a href="results/coverage_matrix.html">docs/results/coverage_matrix.html</a>. Die JSON-Datei daneben ist maschinenlesbar und enthält dieselben Spalten: platform status, input needed, automation level, evidence artifacts, CLI/API availability und known limitations.</p>
-      <p class="note">Explizite Gap-Zeilen dokumentieren authentifizierte Persona-Crawls, Screenshot/Vision-Review, API-Auth/Jobliste/ZIP, FastAPI-Dokument-URLs und die RDS-SPE-370-Statusfrage.</p>
+      <p class="note">Explizite Gap-Zeilen dokumentieren authentifizierte Persona-Crawls, Screenshot/Vision-Review, API-Auth/Jobliste/ZIP, FastAPI-Dokument-URLs, die RDS-SPE-370-Statusfrage und bei <code>RDS-CUC-377</code> den Bedarf an Produktkontext für pädagogisches Tracking.</p>
     </section>
 
     <section id="api">

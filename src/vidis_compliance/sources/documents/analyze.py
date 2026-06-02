@@ -19,6 +19,7 @@ DOCUMENT_CRITERIA = (
     "RDS-AGB-368",
     "RDS-AGB-369",
     "RDS-SPE-370",
+    "RDS-CUC-377",
 )
 
 
@@ -119,6 +120,18 @@ RULES: dict[str, EvidenceRule] = {
             r"(?:nicht|keine|ohne).{0,80}(?:offengelegt|gekennzeichnet|kenntlich|hinweis).{0,200}(?:sponsoring|sponsor(?:en|ing)?|produktplatzierung|wirtschaftliche\s+interessen)",
         ),
         gap_note="Keine belastbare Aussage zu Sponsoring/Werbe- oder wirtschaftlichen Interessen gefunden; manuelle Prüfung erforderlich.",
+    ),
+    "RDS-CUC-377": EvidenceRule(
+        pass_patterns=(
+            r"(?:adaptives\s+lernsystem|adaptive\s+lernfunktion|lernstandsdiagnose|lernfortschritt).{0,220}(?:tracking|nutzerverhalten|analyse|profil)",
+            r"(?:tracking|nutzerverhalten|analyse|profil).{0,220}(?:pädagogisch|paedagogisch|lernstandsdiagnose|lernfortschritt|adaptive\s+lernfunktion)",
+            r"(?:keine|kein)\s+(?:trackingmechanismen|tracking|analytics|werbe(?:tracking|profile?))",
+        ),
+        fail_patterns=(
+            r"(?:werbe(?:tracking|profile?)|marketing\s+tracking|tracking\s+zu\s+werbezwecken|analytics).{0,220}(?:schüler|schueler|lernende|kinder)",
+            r"(?:schüler|schueler|lernende|kinder).{0,220}(?:werbe(?:tracking|profile?)|marketing\s+tracking|tracking\s+zu\s+werbezwecken|analytics)",
+        ),
+        gap_note="Keine belastbare Produkt-/Dokument-Evidenz gefunden, ob erkannte Trackingmechanismen pädagogisch erforderlich sind oder eine Lehrkräfte-Einwilligung vorliegt.",
     ),
 }
 

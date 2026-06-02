@@ -111,6 +111,7 @@ _AUTOMATED_BY_CODE = {
 }
 _AUTOMATED_BY_DOCUMENTS = {
     "RDS-AGB-368",
+    "RDS-CUC-377",
     "RDS-AGB-369",
     "RDS-DEV-380",
     "RDS-DEV-381",
@@ -287,6 +288,8 @@ def _implementation_status(code: str, sources: set[str]) -> str:
 
 
 def _input_needed(code: str, sources: set[str]) -> str:
+    if code == "RDS-CUC-377":
+        return "target URL plus product-context evidence in local documents or AGB/privacy/AVV URLs; human review if purpose remains ambiguous."
     needed = []
     if "site" in sources:
         needed.append("target URL")
@@ -304,6 +307,8 @@ def _input_needed(code: str, sources: set[str]) -> str:
 def _automation_level(code: str, sources: set[str]) -> str:
     if not sources:
         return "manual"
+    if code == "RDS-CUC-377":
+        return "automated evidence aggregation; PASS/FAIL only when tracker absence, known non-pedagogical tracking, or explicit pedagogical-purpose context is available"
     if code in _MANUAL_OVERLAY:
         return "automated signal collection plus manual decision"
     return "fully automated signal/check result for supplied inputs"
@@ -334,6 +339,8 @@ def _cli_api_availability(code: str, sources: set[str]) -> str:
 
 
 def _known_limitations(code: str, sources: set[str]) -> str:
+    if code == "RDS-CUC-377":
+        return "Pedagogical purpose cannot be inferred from browser signals alone; provide product documentation or treat ambiguous tracking/fingerprinting as MANUELL."
     if code in _MANUAL_OVERLAY:
         return _MANUAL_OVERLAY[code]
     if not sources:
