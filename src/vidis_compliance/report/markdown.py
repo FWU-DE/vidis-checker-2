@@ -41,6 +41,14 @@ def _sanitize_raw_capture(raw_capture: dict) -> dict:
         values = sanitized.get(key)
         if isinstance(values, dict):
             sanitized[key] = {storage_key: "<redacted>" for storage_key in values.keys()}
+    screenshots = sanitized.get("screenshots")
+    if isinstance(screenshots, list):
+        sanitized["screenshots"] = [
+            {name: value for name, value in screenshot.items() if name != "path"}
+            if isinstance(screenshot, dict)
+            else screenshot
+            for screenshot in screenshots
+        ]
     return sanitized
 
 

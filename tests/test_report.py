@@ -7,6 +7,14 @@ from vidis_compliance.report.markdown import generate_markdown
 from vidis_compliance.report.pdf import generate_pdf
 
 
+PNG_1X1 = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
+    b"\x00\x00\x0cIDAT\x08\xd7c\xf8\xff\xff?\x00\x05\xfe\x02"
+    b"\xfeA\xe2!\xbc\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
 def test_generate_markdown_includes_criterion_text_evidence_and_raw_capture(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",
@@ -121,6 +129,7 @@ def test_generate_markdown_lists_screenshot_evidence_and_vision_manual_notes(tmp
     text = output.read_text(encoding="utf-8")
     assert "| Screenshot-Nachweise | [page-1](page-1.png) — https://example.test/ |" in text
     assert "| Vision-Review | page-1: MANUELL — Vision-Review nicht konfiguriert; Screenshot manuell prüfen. |" in text
+    assert '"path"' not in text
     assert b"fixture" not in text.encode("utf-8")
 
 
@@ -134,3 +143,37 @@ def test_generate_pdf_writes_non_empty_report(tmp_path: Path) -> None:
     generate_pdf(result, output, raw_capture={"url": "https://example.test"})
 
     assert output.stat().st_size > 1000
+
+
+def test_generate_pdf_embeds_public_screenshot_and_shortens_noisy_evidence(tmp_path: Path) -> None:
+    screenshot = tmp_path / "page-1.png"
+    screenshot.write_bytes(PNG_1X1)
+    long_tracker_url = "https://stats.example.test/matomo.php?" + "x=" * 500
+    result = JobResult(
+        job_id="unit",
+        findings=[CheckFinding(criterion="RDS-CUC-373", status="FAIL", note=f"Tracker erkannt: {long_tracker_url}")],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(
+        result,
+        output,
+        raw_capture={
+            "url": "https://example.test",
+            "requests": [long_tracker_url],
+            "scripts": ["https://stats.example.test/matomo.js"],
+            "screenshots": [
+                {
+                    "label": "page-1",
+                    "url": "https://example.test/",
+                    "filename": "page-1.png",
+                    "path": str(screenshot),
+                    "local_only": False,
+                }
+            ],
+        },
+    )
+
+    data = output.read_bytes()
+    assert output.stat().st_size > 1000
+    assert b"/Image" in data

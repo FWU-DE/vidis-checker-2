@@ -268,4 +268,4 @@ def test_capture_page_records_screenshot_metadata_without_embedding_image_bytes(
         }
     ]
     assert (tmp_path / "page-3.png").read_bytes() == b"fixture-png"
-    assert ("screenshot", str(tmp_path / "page-3.png"), True) in page.events
+    assert ("screenshot", str(tmp_path / "page-3.png"), False) in page.events

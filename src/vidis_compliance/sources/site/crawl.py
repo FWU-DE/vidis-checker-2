@@ -363,7 +363,7 @@ def _capture_page(
         filename = f"{label}.png"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = screenshot_dir / filename
-        page.screenshot(path=str(screenshot_path), full_page=True)
+        page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(
             {
                 "label": label,
