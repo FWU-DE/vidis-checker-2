@@ -8,6 +8,7 @@ from .checks.site.cookies import classify_cookies, classify_tracking_pixel, clas
 from .checks.site.basic_http import check_site_transport
 from .sources.site.crawl import crawl
 from .sources.code.inspect import inspect_code_path
+from .sources.documents.analyze import analyze_documents, build_document_inputs
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 import yaml
@@ -35,6 +36,10 @@ def check(
     audience: str = typer.Option("beide", "--audience"),
     output_pdf: str | None = typer.Option(None, "--pdf", help="Optionaler Pfad für den PDF-Report."),
     output_md: str | None = typer.Option(None, "--md", help="Optionaler Pfad für den Markdown-Report."),
+    documents: list[Path] | None = typer.Option(None, "--document", help="Lokale HTML/PDF/Text-Dokumente für AGB/AVV/Datenschutz-Prüfungen."),
+    agb_url: str | None = typer.Option(None, "--agb-url", help="URL zu AGB/Nutzungsbedingungen."),
+    privacy_url: str | None = typer.Option(None, "--privacy-url", help="URL zur Datenschutzerklärung."),
+    avv_url: str | None = typer.Option(None, "--avv-url", help="URL zum AVV/Auftragsverarbeitungsvertrag."),
 ):
     """Run unified VIDIS checks (site and/or code)."""
     crit = load_criteria()
@@ -43,6 +48,7 @@ def check(
     findings = []
     raw_capture = None
     code_capture = None
+    document_capture = None
     # Browser capture for cookie/storage-related VIDIS criteria.
     if url:
         cap = crawl(url, pages=pages, headless=True)
@@ -69,6 +75,13 @@ def check(
         for finding in code_findings:
             by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
+    document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
+    if document_inputs:
+        document_findings, document_capture = analyze_documents(document_inputs)
+        by_criterion = {finding.criterion: finding for finding in findings}
+        for finding in document_findings:
+            by_criterion[finding.criterion] = finding
+        findings = list(by_criterion.values())
     wired = {f.criterion for f in findings}
     for k in crit.items.keys():
         if k not in wired:
@@ -82,6 +95,8 @@ def check(
         (outdir / "capture.json").write_text(json.dumps(raw_capture, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     if code_capture is not None:
         (outdir / "code_capture.json").write_text(json.dumps(code_capture, ensure_ascii=False, indent=2), encoding="utf-8")
+    if document_capture is not None:
+        (outdir / "document_capture.json").write_text(json.dumps(document_capture, ensure_ascii=False, indent=2), encoding="utf-8")
     if output_pdf:
         pdf_path = Path(output_pdf)
         pdf_path.parent.mkdir(parents=True, exist_ok=True)

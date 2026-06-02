@@ -21,9 +21,16 @@ Quick start
 
 Commands
 - vidis check --url https://example.com [--pages 10] [--pdf out/report.pdf] [--md out/report.md]
+- vidis check --document agb.html --document avv.pdf [--privacy-url https://example.com/datenschutz] [--agb-url https://example.com/agb] [--avv-url https://example.com/avv]
 - vidis check-code --path /path/to/repo
 - vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
 - vidis serve  # FastAPI
+
+Document checks
+- `--document PATH` can be repeated for local HTML, text/Markdown, or PDF files.
+- `--agb-url`, `--privacy-url`, and `--avv-url` fetch remote AGB, Datenschutz, and AVV documents.
+- When document inputs are present, `vidis check` emits `results/<job_id>/document_capture.json` with extracted snippets for RDS-AGB-368, RDS-AGB-369, RDS-DEV-380, RDS-DEV-381, RDS-DEV-466, and RDS-DSO-383.
+- Classification is conservative: PASS requires explicit document evidence, FAIL requires clear contradictions, otherwise the criterion remains MANUELL with an evidence-gap note.
 
 Structure
 - src/vidis_compliance/
