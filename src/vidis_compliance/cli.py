@@ -11,6 +11,7 @@ from .checks.site.advertising import (
 )
 from .checks.site.cookies import (
     classify_browser_fingerprinting,
+    classify_cookie_description_completeness,
     classify_cookies,
     classify_device_storage_access,
     classify_local_storage,
@@ -28,7 +29,7 @@ from .sources.agentic import (
     write_agentic_artifacts,
 )
 from .sources.code.inspect import inspect_code_path
-from .sources.documents.analyze import analyze_documents, build_document_inputs
+from .sources.documents.analyze import analyze_documents, build_document_inputs, extract_text, fetch_document
 from .evidence import run_lighthouse, write_webinspector_exports
 from .coverage_matrix import write_coverage_matrix
 from .report.markdown import generate_markdown
@@ -47,6 +48,23 @@ def load_criteria() -> CriteriaIndex:
     for code, spec in data.items():
         items[code] = VidisCriterion(code=code, **spec)
     return CriteriaIndex(items=items)
+
+
+
+def _extract_privacy_text_for_cookie_descriptions(document_inputs) -> str:
+    texts: list[str] = []
+    for document in document_inputs:
+        if getattr(document, "kind", "document") not in {"privacy", "document"}:
+            continue
+        try:
+            content, content_type, location, _kind = fetch_document(document)
+            text = extract_text(content, content_type=content_type, location=location)
+        except Exception:
+            continue
+        lowered = text.lower()
+        if getattr(document, "kind", "document") == "privacy" or "datenschutzerklärung" in lowered or "datenschutzerklaerung" in lowered or "cookie" in lowered:
+            texts.append(text)
+    return "\n".join(texts)
 
 
 @app.command()
@@ -79,6 +97,8 @@ def check(
     code_capture = None
     document_capture = None
     agent_capture = None
+    document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
+    privacy_text_for_cookies = _extract_privacy_text_for_cookie_descriptions(document_inputs) if document_inputs else ""
     # Browser capture for cookie/storage-related VIDIS criteria.
     if url and not agentic:
         outdir = Path("results") / cfg.job_id
@@ -125,7 +145,12 @@ def check(
         findings.append(CheckFinding(criterion="RDS-WER-385", status=s5, note=n5))
         s6, n6 = classify_youth_protection(page_signals, audience)
         findings.append(CheckFinding(criterion="RDS-VIN-354", status=s6, note=n6))
-        findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note="Datenschutzerklärung vs. Cookies abgleichen"))
+        s453, n453, e453 = classify_cookie_description_completeness(
+            page_signals,
+            privacy_text=privacy_text_for_cookies,
+        )
+        raw_capture["rds_cuc_453"] = e453
+        findings.append(CheckFinding(criterion="RDS-CUC-453", status=s453, note=n453))
         findings.extend(check_site_transport(url))
         ipf_analysis = analyze_ipf_site(url)
         raw_capture["ipf"] = {
@@ -140,12 +165,29 @@ def check(
         for finding in code_findings:
             by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
-    document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
     if document_inputs:
         document_findings, document_capture = analyze_documents(document_inputs)
         by_criterion = {finding.criterion: finding for finding in findings}
         for finding in document_findings:
             by_criterion[finding.criterion] = finding
+        if raw_capture is not None:
+            raw_capture["document_capture"] = document_capture
+            page_signals = {
+                "cookies": raw_capture.get("cookies") or [],
+                "scripts": raw_capture.get("scripts") or [],
+                "requests": raw_capture.get("requests") or [],
+                "resources": raw_capture.get("resources") or [],
+                "browser_signals": raw_capture.get("browser_signals") or {},
+                "local_storage": raw_capture.get("local_storage") or {},
+                "session_storage": raw_capture.get("session_storage") or {},
+                "document_capture": document_capture,
+            }
+            s453, n453, e453 = classify_cookie_description_completeness(
+                page_signals,
+                privacy_text=privacy_text_for_cookies,
+            )
+            raw_capture["rds_cuc_453"] = e453
+            by_criterion["RDS-CUC-453"] = CheckFinding(criterion="RDS-CUC-453", status=s453, note=n453)
         findings = list(by_criterion.values())
     if agentic:
         if not url:

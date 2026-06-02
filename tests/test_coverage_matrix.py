@@ -62,3 +62,16 @@ def test_write_coverage_matrix_outputs_html_and_json(tmp_path: Path) -> None:
     assert "Platform status" in html
     assert "RDS-SPE-370" in html
     assert json_path.exists()
+
+
+
+def test_rds_cuc_453_coverage_documents_privacy_text_requirement() -> None:
+    matrix = build_coverage_matrix()
+
+    row = next(row for row in matrix["rows"] if row["code"] == "RDS-CUC-453")
+
+    assert row["implementation_status"] == "partially automated"
+    assert "target URL" in row["input_needed"]
+    assert "document" in row["input_needed"].lower()
+    assert "document_capture.json" in row["evidence_artifacts"]
+    assert "Datenschutzerklärungstexte" in row["known_limitations"]

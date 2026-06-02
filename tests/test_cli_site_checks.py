@@ -136,6 +136,20 @@ def test_url_check_can_attach_lighthouse_and_webinspector_exports(tmp_path: Path
 
 
 
+def _patch_fast_site_dependencies(monkeypatch) -> None:
+    monkeypatch.setattr("vidis_compliance.cli.check_site_transport", lambda url: [])
+    monkeypatch.setattr(
+        "vidis_compliance.cli.analyze_ipf_site",
+        lambda url: IpfSiteAnalysis(
+            source_url=url,
+            visited_urls=[url],
+            impressum=LegalPageResult(kind="impressum"),
+            privacy=LegalPageResult(kind="privacy"),
+        ),
+    )
+    monkeypatch.setattr("vidis_compliance.cli.findings_from_ipf_analysis", lambda analysis: [])
+
+
 def test_check_writes_standalone_coverage_matrix_by_default(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
 
@@ -150,20 +164,11 @@ def test_check_writes_standalone_coverage_matrix_by_default(tmp_path: Path, monk
             resources=[],
             links=[],
             visible_text=[],
+            browser_signals={"fingerprinting": [], "device_storage": []},
         )
 
     monkeypatch.setattr("vidis_compliance.cli.crawl", fake_crawl)
-    monkeypatch.setattr("vidis_compliance.cli.check_site_transport", lambda url: [])
-    monkeypatch.setattr(
-        "vidis_compliance.cli.analyze_ipf_site",
-        lambda url: IpfSiteAnalysis(
-            source_url=url,
-            visited_urls=[url],
-            impressum=LegalPageResult(kind="impressum"),
-            privacy=LegalPageResult(kind="privacy"),
-        ),
-    )
-    monkeypatch.setattr("vidis_compliance.cli.findings_from_ipf_analysis", lambda analysis: [])
+    _patch_fast_site_dependencies(monkeypatch)
 
     result = CliRunner().invoke(app, ["check", "--url", "https://example.test", "--output", "coverage-default"])
 
@@ -177,3 +182,54 @@ def test_check_writes_standalone_coverage_matrix_by_default(tmp_path: Path, monk
     html = (outdir / "coverage_matrix.html").read_text(encoding="utf-8")
     assert "VIDIS Coverage Matrix" in html
     assert "RDS-CUC-371" in html
+
+
+def test_url_check_automates_rds_cuc_453_with_privacy_document(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    privacy = tmp_path / "privacy.txt"
+    privacy.write_text(
+        "Datenschutzerklärung: CookieConsent speichert die Cookie-Einwilligung. "
+        "LocalStorage appTheme speichert die Darstellungseinstellung.",
+        encoding="utf-8",
+    )
+
+    def fake_crawl(url: str, pages: int, headless: bool, **kwargs) -> PageCapture:
+        return PageCapture(
+            url=url,
+            cookies=[{"name": "CookieConsent"}],
+            local_storage={"appTheme": "dark"},
+            session_storage={},
+            scripts=[],
+            requests=[],
+            resources=[],
+            links=[],
+            visible_text=[],
+            browser_signals={"fingerprinting": [], "device_storage": []},
+        )
+
+    monkeypatch.setattr("vidis_compliance.cli.crawl", fake_crawl)
+    _patch_fast_site_dependencies(monkeypatch)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "check",
+            "--url",
+            "https://example.test",
+            "--document",
+            str(privacy),
+            "--output",
+            "cuc453",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads((tmp_path / "results" / "cuc453" / "result.json").read_text())
+    capture = json.loads((tmp_path / "results" / "cuc453" / "capture.json").read_text())
+    finding = {item["criterion"]: item for item in data["findings"]}["RDS-CUC-453"]
+    assert finding["status"] == "PASS"
+    assert finding["note"] != "Datenschutzerklärung vs. Cookies abgleichen"
+    assert "Cookie: CookieConsent" in finding["note"]
+    assert "LocalStorage: appTheme" in finding["note"]
+    assert "dark" not in finding["note"]
+    assert capture["rds_cuc_453"]["present"] == ["Cookie: CookieConsent", "LocalStorage: appTheme"]

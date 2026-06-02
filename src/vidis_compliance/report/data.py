@@ -161,6 +161,14 @@ def _evidence_for_finding(
                 evidence.append(EvidenceItem("Beschriebene Cookies/Speicher", ", ".join(cuc_453["present"])))
             if cuc_453.get("missing"):
                 evidence.append(EvidenceItem("Fehlende Beschreibungen", ", ".join(cuc_453["missing"])))
+        if finding.criterion == "RDS-CUC-453":
+            cuc_453 = raw_capture.get("rds_cuc_453") or {}
+            if cuc_453.get("observed"):
+                evidence.append(EvidenceItem("RDS-CUC-453 Inventar", ", ".join(cuc_453["observed"])))
+            if cuc_453.get("present"):
+                evidence.append(EvidenceItem("Beschriebene Cookies/Speicher", ", ".join(cuc_453["present"])))
+            if cuc_453.get("missing"):
+                evidence.append(EvidenceItem("Fehlende Beschreibungen", ", ".join(cuc_453["missing"])))
     if finding.criterion == "RDS-CUC-373":
         requests = raw_capture.get("requests") or []
         scripts = raw_capture.get("scripts") or []

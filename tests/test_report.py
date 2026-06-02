@@ -180,6 +180,37 @@ def test_generate_pdf_embeds_public_screenshot_and_shortens_noisy_evidence(tmp_p
 
 
 
+def test_generate_markdown_lists_rds_cuc_453_description_matches_and_misses(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[
+            CheckFinding(
+                criterion="RDS-CUC-453",
+                status="FAIL",
+                note="Fehlende Beschreibung: LocalStorage: matomo.id; Beschrieben: Cookie: CookieConsent",
+            )
+        ],
+    )
+    raw_capture = {
+        "cookies": [{"name": "CookieConsent"}],
+        "local_storage": {"matomo.id": "secret"},
+        "rds_cuc_453": {
+            "observed": ["Cookie: CookieConsent", "LocalStorage: matomo.id"],
+            "present": ["Cookie: CookieConsent"],
+            "missing": ["LocalStorage: matomo.id"],
+        },
+    }
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture=raw_capture)
+
+    text = output.read_text(encoding="utf-8")
+    assert "| RDS-CUC-453 Inventar | Cookie: CookieConsent, LocalStorage: matomo.id |" in text
+    assert "| Beschriebene Cookies/Speicher | Cookie: CookieConsent |" in text
+    assert "| Fehlende Beschreibungen | LocalStorage: matomo.id |" in text
+    assert "secret" not in text
+
+
 def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",

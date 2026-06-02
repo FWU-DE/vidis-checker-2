@@ -88,6 +88,7 @@ _AUTOMATED_BY_SITE = {
     "RDS-CUC-375",
     "RDS-CUC-376",
     "RDS-CUC-377",
+    "RDS-CUC-453",
     "RDS-IPF-364",
     "RDS-IPF-365",
     "RDS-IPF-366",
@@ -112,6 +113,7 @@ _AUTOMATED_BY_CODE = {
 _AUTOMATED_BY_DOCUMENTS = {
     "RDS-AGB-368",
     "RDS-AGB-369",
+    "RDS-CUC-453",
     "RDS-DEV-380",
     "RDS-DEV-381",
     "RDS-DEV-466",
@@ -119,7 +121,7 @@ _AUTOMATED_BY_DOCUMENTS = {
     "RDS-SPE-370",
 }
 _MANUAL_OVERLAY = {
-    "RDS-CUC-453": "Datenschutzerklärung muss weiterhin gegen reale Cookies/Consent-Texte abgeglichen werden.",
+    "RDS-CUC-453": "Cookie-/Storage-Beschreibungen werden automatisch gegen verfügbare Datenschutzerklärungstexte abgeglichen; fehlender oder semantisch unklarer Text bleibt MANUELL.",
     "RDS-CUC-374": "Automatisch bewertbar: keine oder nur erlaubte Storage-Keys bestehen; unbekannte Storage-Keys bleiben reviewpflichtig.",
     "RDS-CUC-375": "Device-storage signals können nur Indizien liefern; Zweckbindung bleibt reviewpflichtig.",
     "RDS-CUC-376": "Fingerprinting-Signale sind technisch erkennbar, Rechts-/Zweckbewertung bleibt reviewpflichtig.",

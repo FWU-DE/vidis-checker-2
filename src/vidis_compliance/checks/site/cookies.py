@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from typing import Dict, Any, List, Tuple
 
 from ...models import Status
@@ -171,6 +172,83 @@ def classify_cookies(
     if essential_details:
         return 'PASS', "Alle erkannten Cookies/Speicher-Einträge sind laut cookie_db.json/Allowlist essenziell; " + note
     return 'MANUELL', 'Keine Cookies oder Browser-Storage-Einträge zur Bewertung nach RDS-CUC-371/372 erkannt'
+
+
+def _observed_cookie_storage_inventory(data: Dict[str, Any]) -> list[tuple[str, str]]:
+    inventory: list[tuple[str, str]] = []
+    for cookie in data.get('cookies') or []:
+        name = str(cookie.get('name') or '').strip()
+        if name:
+            inventory.append(('Cookie', name))
+    for label, key in (('LocalStorage', 'local_storage'), ('SessionStorage', 'session_storage')):
+        values = data.get(key) or {}
+        for storage_key in sorted({str(k).strip() for k in values.keys() if str(k).strip()}):
+            inventory.append((label, storage_key))
+    return sorted(set(inventory), key=lambda item: (item[0], item[1].lower()))
+
+
+def _inventory_label(kind: str, name: str) -> str:
+    return f"{kind}: {name}"
+
+
+def _normalize_for_match(text: str) -> str:
+    return re.sub(r"[^a-z0-9äöüß]+", "", text.lower())
+
+
+def _privacy_text_mentions(name: str, privacy_text: str, database: CookieDatabase) -> bool:
+    normalized_name = _normalize_for_match(name)
+    normalized_text = _normalize_for_match(privacy_text)
+    if normalized_name and normalized_name in normalized_text:
+        return True
+    cookie_info = database.get_cookie_info(name)
+    if cookie_info is None:
+        return False
+    candidates = [
+        cookie_info.cookie,
+        cookie_info.platform,
+        cookie_info.category,
+        cookie_info.description,
+        cookie_info.retention_period,
+    ]
+    return any(
+        _normalize_for_match(candidate) and _normalize_for_match(candidate) in normalized_text
+        for candidate in candidates
+    )
+
+
+def classify_cookie_description_completeness(
+    data: Dict[str, Any],
+    *,
+    privacy_text: str | None,
+    cookie_database: CookieDatabase | None = None,
+) -> tuple[Status, str, dict[str, list[str]]]:
+    """RDS-CUC-453: privacy text describes every observed cookie/storage key without exposing values."""
+    database = cookie_database or get_default_cookie_database()
+    inventory = _observed_cookie_storage_inventory(data)
+    observed = [_inventory_label(kind, name) for kind, name in inventory]
+    evidence = {"observed": observed, "present": [], "missing": []}
+    if not inventory:
+        return "MANUELL", "Keine Cookies oder Browser-Storage-Einträge für RDS-CUC-453 erkannt", evidence
+    if not (privacy_text or "").strip():
+        return (
+            "MANUELL",
+            "Datenschutzerklärungstext fehlt; Cookie-/Storage-Beschreibungen können nicht abgeglichen werden: "
+            + ", ".join(observed),
+            evidence,
+        )
+
+    for kind, name in inventory:
+        label = _inventory_label(kind, name)
+        if _privacy_text_mentions(name, privacy_text or "", database):
+            evidence["present"].append(label)
+        else:
+            evidence["missing"].append(label)
+
+    present = ", ".join(evidence["present"]) or "—"
+    missing = ", ".join(evidence["missing"])
+    if evidence["missing"]:
+        return "FAIL", f"Fehlende Beschreibung: {missing}; Beschrieben: {present}", evidence
+    return "PASS", f"Beschrieben: {present}", evidence
 
 
 def classify_tracking_pixel(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
