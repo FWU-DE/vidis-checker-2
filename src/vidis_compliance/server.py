@@ -21,11 +21,12 @@ from .cli import load_criteria
 from .models import CheckFinding, JobConfig, JobResult, Status
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
+from .sources.documents.analyze import build_document_inputs
 
 app = FastAPI(title="VIDIS Compliance API")
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
-ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "job.json"}
+ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "job.json"}
 ALLOWED_REPORTS = {"report.md", "report.pdf"}
 _STORE_LOCK = threading.Lock()
 _JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get("VIDIS_JOB_WORKERS", "4")))
@@ -35,13 +36,29 @@ class JobCreateRequest(BaseModel):
     target_url: HttpUrl | None = None
     code_path: str | None = None
     document_path: str | None = None
+    document_paths: list[str] = Field(default_factory=list)
+    agb_url: HttpUrl | None = None
+    privacy_url: HttpUrl | None = None
+    avv_url: HttpUrl | None = None
     target_audience: Literal["SuS", "Lehrkraefte", "beide"] = "beide"
     pages: int = Field(default=8, ge=1, le=100)
 
     @model_validator(mode="after")
     def require_target(self) -> "JobCreateRequest":
-        if not (self.target_url or self.code_path or self.document_path):
-            raise ValueError("target_url, code_path or document_path is required")
+        if not self.document_paths and self.document_path:
+            self.document_paths = [self.document_path]
+        for document_path in self.document_paths:
+            if not Path(document_path).is_file():
+                raise ValueError(f"document path does not exist: {document_path}")
+        if not (
+            self.target_url
+            or self.code_path
+            or self.document_paths
+            or self.agb_url
+            or self.privacy_url
+            or self.avv_url
+        ):
+            raise ValueError("target_url, code_path, document_paths or document URL is required")
         return self
 
 
@@ -225,7 +242,7 @@ def _run_job(job_id: str) -> None:
         metadata.updated_at = _now()
         _write_metadata(metadata)
 
-        result, raw_capture, code_capture = _execute_check(job_id, metadata.request)
+        result, raw_capture, code_capture, document_capture = _execute_check(job_id, metadata.request)
         job_dir = _job_dir(job_id)
         (job_dir / "result.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
         if raw_capture is not None:
@@ -236,6 +253,11 @@ def _run_job(job_id: str) -> None:
         if code_capture is not None:
             (job_dir / "code_capture.json").write_text(
                 json.dumps(code_capture, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        if document_capture is not None:
+            (job_dir / "document_capture.json").write_text(
+                json.dumps(document_capture, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
         metadata.status = "completed"
@@ -249,7 +271,7 @@ def _run_job(job_id: str) -> None:
         _write_metadata(metadata)
 
 
-def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None]:
+def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None, dict | None]:
     crit = load_criteria()
     cfg = JobConfig(
         job_id=job_id,
@@ -261,6 +283,7 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
     findings: list[CheckFinding] = []
     raw_capture = None
     code_capture = None
+    document_capture = None
 
     if cfg.target_url:
         cap = cli_module.crawl(cfg.target_url, pages=cfg.pages, headless=True)
@@ -288,20 +311,24 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
             by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
 
-    if request.document_path:
-        findings.append(
-            CheckFinding(
-                criterion="RDS-DOC-000",
-                status="MANUELL",
-                note=f"Dokumentprüfung bereitgestellt: {request.document_path}",
-            )
-        )
+    document_inputs = build_document_inputs(
+        request.document_paths,
+        agb_url=str(request.agb_url) if request.agb_url else None,
+        privacy_url=str(request.privacy_url) if request.privacy_url else None,
+        avv_url=str(request.avv_url) if request.avv_url else None,
+    )
+    if document_inputs:
+        document_findings, document_capture = cli_module.analyze_documents(document_inputs)
+        by_criterion = {finding.criterion: finding for finding in findings}
+        for finding in document_findings:
+            by_criterion[finding.criterion] = finding
+        findings = list(by_criterion.values())
 
     wired = {finding.criterion for finding in findings}
     for code in crit.items.keys():
         if code not in wired:
             findings.append(CheckFinding(criterion=code, status="MANUELL", note="Not yet implemented"))
-    return JobResult(job_id=job_id, findings=findings), raw_capture, code_capture
+    return JobResult(job_id=job_id, findings=findings), raw_capture, code_capture, document_capture
 
 
 def _results_root() -> Path:

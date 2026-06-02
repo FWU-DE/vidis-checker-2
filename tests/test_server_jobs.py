@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from vidis_compliance import server
 from vidis_compliance.models import CheckFinding
+from vidis_compliance.sources.documents.analyze import DocumentInput
 
 
 def _wait_for_completed(client: TestClient, job_id: str) -> dict:
@@ -101,13 +102,13 @@ def test_post_job_returns_before_slow_scan_finishes(tmp_path: Path, monkeypatch)
 def test_jobs_reject_missing_targets_and_path_traversal(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
     client = TestClient(server.app)
+    document_path = tmp_path / "doc.pdf"
+    document_path.write_text("Datenschutzerklärung personenbezogene Daten", encoding="utf-8")
 
     missing = client.post("/jobs", json={"pages": 1})
     assert missing.status_code == 422
 
-    document = tmp_path / "doc.pdf"
-    document.write_text("fixture doc", encoding="utf-8")
-    created = client.post("/jobs", json={"document_path": str(document)})
+    created = client.post("/jobs", json={"document_path": str(document_path)})
     assert created.status_code == 202
     job_id = created.json()["id"]
     completed = _wait_for_completed(client, job_id)
@@ -144,13 +145,13 @@ def test_api_requires_bearer_token_when_configured(tmp_path: Path, monkeypatch) 
 def test_jobs_list_returns_persisted_jobs_with_status_filter_and_no_results(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
     client = TestClient(server.app)
+    one = tmp_path / "one.pdf"
+    two = tmp_path / "two.pdf"
+    one.write_text("AGB Datenschutz DSGVO", encoding="utf-8")
+    two.write_text("AVV Art. 28 DSGVO", encoding="utf-8")
 
-    first_document = tmp_path / "one.pdf"
-    second_document = tmp_path / "two.pdf"
-    first_document.write_text("fixture one", encoding="utf-8")
-    second_document.write_text("fixture two", encoding="utf-8")
-    first = client.post("/jobs", json={"document_path": str(first_document)})
-    second = client.post("/jobs", json={"document_path": str(second_document)})
+    first = client.post("/jobs", json={"document_path": str(one)})
+    second = client.post("/jobs", json={"document_path": str(two)})
     assert first.status_code == 202
     assert second.status_code == 202
     first_id = first.json()["id"]
@@ -174,10 +175,10 @@ def test_jobs_list_returns_persisted_jobs_with_status_filter_and_no_results(tmp_
 def test_archive_zip_contains_expected_files_and_excludes_unsafe_artifacts(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
     client = TestClient(server.app)
+    document_path = tmp_path / "doc.pdf"
+    document_path.write_text("AGB Datenschutz DSGVO", encoding="utf-8")
 
-    document = tmp_path / "doc.pdf"
-    document.write_text("fixture doc", encoding="utf-8")
-    created = client.post("/jobs", json={"document_path": str(document)})
+    created = client.post("/jobs", json={"document_path": str(document_path)})
     assert created.status_code == 202
     job_id = created.json()["id"]
     assert _wait_for_completed(client, job_id)["status"] == "completed"
@@ -197,3 +198,83 @@ def test_archive_zip_contains_expected_files_and_excludes_unsafe_artifacts(tmp_p
         assert "secret.txt" not in names
         assert "../escape.txt" not in names
         assert all(".." not in Path(name).parts for name in names)
+
+
+def test_post_job_analyzes_remote_document_urls_and_exposes_document_capture(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
+    captured_inputs: list[DocumentInput] = []
+
+    def fake_analyze_documents(documents):
+        captured_inputs.extend(documents)
+        return (
+            [CheckFinding(criterion="RDS-AGB-369", status="PASS", note="avv fixture")],
+            {
+                "documents": [
+                    {"location": document.location, "kind": document.kind, "content_type": "text/html", "text_length": 42, "snippets": {}}
+                    for document in documents
+                ],
+                "evidence": {"RDS-AGB-369": ["avv fixture"]},
+            },
+        )
+
+    monkeypatch.setattr(server.cli_module, "analyze_documents", fake_analyze_documents)
+    client = TestClient(server.app)
+
+    created = client.post(
+        "/jobs",
+        json={
+            "agb_url": "https://example.com/agb",
+            "privacy_url": "https://example.com/datenschutz",
+            "avv_url": "https://example.com/avv",
+        },
+    )
+
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    completed = _wait_for_completed(client, job_id)
+
+    assert completed["status"] == "completed"
+    assert completed["artifacts"]["document_capture_json"].endswith(f"/jobs/{job_id}/artifacts/document_capture.json")
+    assert [(item.kind, item.location) for item in captured_inputs] == [
+        ("agb", "https://example.com/agb"),
+        ("privacy", "https://example.com/datenschutz"),
+        ("avv", "https://example.com/avv"),
+    ]
+    by_code = {finding["criterion"]: finding for finding in completed["result"]["findings"]}
+    assert by_code["RDS-AGB-369"]["status"] == "PASS"
+
+    artifact = client.get(f"/jobs/{job_id}/artifacts/document_capture.json")
+    assert artifact.status_code == 200
+    assert [document["kind"] for document in artifact.json()["documents"]] == ["agb", "privacy", "avv"]
+
+
+def test_post_job_accepts_document_path_list_and_rejects_invalid_document_inputs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
+    document_a = tmp_path / "agb.txt"
+    document_b = tmp_path / "privacy.txt"
+    document_a.write_text("AGB Datenschutz DSGVO", encoding="utf-8")
+    document_b.write_text("Datenschutzerklärung personenbezogene Daten", encoding="utf-8")
+    captured_inputs: list[DocumentInput] = []
+
+    def fake_analyze_documents(documents):
+        captured_inputs.extend(documents)
+        return ([CheckFinding(criterion="RDS-AGB-368", status="PASS", note="docs fixture")], {"documents": [], "evidence": {}})
+
+    monkeypatch.setattr(server.cli_module, "analyze_documents", fake_analyze_documents)
+    client = TestClient(server.app)
+
+    created = client.post("/jobs", json={"document_paths": [str(document_a), str(document_b)]})
+
+    assert created.status_code == 202
+    completed = _wait_for_completed(client, created.json()["id"])
+    assert completed["status"] == "completed"
+    assert [(item.kind, item.location) for item in captured_inputs] == [
+        ("document", str(document_a)),
+        ("document", str(document_b)),
+    ]
+
+    missing_path = client.post("/jobs", json={"document_paths": [str(tmp_path / "missing.pdf")]})
+    assert missing_path.status_code == 422
+
+    invalid_url = client.post("/jobs", json={"privacy_url": "file:///etc/passwd"})
+    assert invalid_url.status_code == 422

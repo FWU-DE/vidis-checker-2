@@ -303,6 +303,12 @@ uv run pytest -q</code></pre>
   -H 'Content-Type: application/json' \
   -d '{"target_url":"https://example.com","pages":8}'</code></pre>
         </div>
+        <div class="card">
+          <span class="tag">Dokument-Job</span>
+          <pre><code>curl -X POST http://127.0.0.1:8645/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"document_paths":["/data/agb.pdf"],"agb_url":"https://example.com/agb","privacy_url":"https://example.com/datenschutz","avv_url":"https://example.com/avv"}'</code></pre>
+        </div>
       </div>
       <h3>Job pollieren, Jobs listen und Report erzeugen</h3>
       <pre><code># Optional absichern: export VIDIS_API_KEY='change-me'
@@ -319,7 +325,7 @@ curl -X POST http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports \
 curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf
 curl -o vidis-evidence.zip http://127.0.0.1:8645/jobs/&lt;job_id&gt;/archive.zip</code></pre>
       <p>Ohne <code>VIDIS_API_KEY</code> ist die API für lokale Entwicklung offen. Sobald <code>VIDIS_API_KEY</code> oder das alte <code>API_KEY</code> gesetzt ist, müssen alle Endpoints einen gültigen Bearer-Token senden.</p>
-      <p><code>GET /jobs</code> liefert eine begrenzte Übersicht persistierter Jobs mit optionalem <code>status</code>-Filter sowie <code>limit</code>/<code>offset</code>, ohne vollständige Ergebnisdaten einzubetten. Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden. Das ZIP-Archiv enthält nur erlaubte Dateien und Reports; beliebige Zusatzdateien oder Secrets im Job-Ordner werden nicht exportiert.</p>
+      <p><code>GET /jobs</code> liefert eine begrenzte Übersicht persistierter Jobs mit optionalem <code>status</code>-Filter sowie <code>limit</code>/<code>offset</code>, ohne vollständige Ergebnisdaten einzubetten. Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code>, <code>document_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden. Lokale <code>document_paths</code> müssen auf dem Server existieren; Remote-Felder akzeptieren nur HTTP(S)-URLs. Das ZIP-Archiv enthält nur erlaubte Dateien und Reports; beliebige Zusatzdateien oder Secrets im Job-Ordner werden nicht exportiert.</p>
     </section>
 
     <section id="outputs">
