@@ -67,9 +67,9 @@ def render_pdf(document: ReportDocument, output_pdf: Path) -> None:
             styles["SmallMuted"],
         )
         parts = [title, meta]
-        if criterion.description.strip():
+        if report.should_show_criterion_text:
             parts.append(Paragraph("Kriterium", styles["MiniHeading"]))
-            parts.append(Paragraph(_xml_escape(_compact_text(criterion.description.strip(), 600)), styles["BodyText"]))
+            parts.append(Paragraph(_xml_escape(_compact_text(criterion.description.strip(), 900)), styles["BodyText"]))
         parts.append(Paragraph("Bewertung", styles["MiniHeading"]))
         parts.append(Paragraph(_xml_escape(_compact_report_text(report.text, 650)), styles["BodyText"]))
         parts.append(Paragraph("Nachweise", styles["MiniHeading"]))

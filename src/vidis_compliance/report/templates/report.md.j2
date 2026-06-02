@@ -20,7 +20,7 @@
 - Bereich: {{ report.criterion.area }}
 - Verbindlichkeit: {{ "MUSS" if report.criterion.must else "SOLL" }}
 - Status: **{{ report.finding.status }}**
-{% if report.criterion.description.strip() %}
+{% if report.should_show_criterion_text %}
 
 **Kriteriumstext**
 

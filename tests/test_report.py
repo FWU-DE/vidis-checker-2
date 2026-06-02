@@ -252,7 +252,76 @@ def test_generate_markdown_includes_criteria_missing_from_result_as_untested(tmp
     assert "### RDS-AGB-368:" in text
     assert "als manuell zu prüfen bewertet" in text
     assert "Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet." in text
+    assert "Seiten des Angebots sind ausschließlich über https abrufbar." in text
 
+
+def test_generic_not_yet_implemented_finding_is_normalized_and_shows_full_manual_context(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="fallback",
+        findings=[CheckFinding(criterion="RDS-CUC-375", status="MANUELL", note="Not yet implemented")],
+    )
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output)
+
+    text = output.read_text(encoding="utf-8")
+    assert "Not yet implemented" not in text
+    assert "### RDS-CUC-375: Informationen auf der Endeinrichtung des Endnutzers" in text
+    assert "- Bereich: RDS" in text
+    assert "- Verbindlichkeit: MUSS" in text
+    assert "Es werden keine sonstigen Informationen auf der Endeinrichtung des Endnutzers gespeichert" in text
+    assert "Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet." in text
+
+
+def test_pass_fail_markdown_does_not_print_full_criterion_text(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="concise",
+        findings=[CheckFinding(criterion="RDS-CUC-375", status="PASS", note="Keine auffälligen Browser-Storage-APIs")],
+    )
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output)
+
+    rds_cuc_375_section = text_section(output.read_text(encoding="utf-8"), "### RDS-CUC-375:")
+    assert "Keine auffälligen Browser-Storage-APIs" in rds_cuc_375_section
+    assert "Es werden keine sonstigen Informationen auf der Endeinrichtung" not in rds_cuc_375_section
+
+
+def test_active_registry_criteria_have_non_empty_descriptions() -> None:
+    from vidis_compliance.report.data import load_criteria
+
+    criteria = load_criteria()
+
+    assert len(criteria.items) == 26
+    assert [code for code, criterion in criteria.items.items() if not criterion.description.strip()] == []
+
+
+def test_generate_pdf_contains_full_manual_criterion_text(tmp_path: Path) -> None:
+    import subprocess
+
+    result = JobResult(
+        job_id="pdf-manual",
+        findings=[CheckFinding(criterion="RDS-CUC-376", status="MANUELL", note="Not yet implemented")],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(result, output)
+
+    text = subprocess.run(
+        ["pdftotext", str(output), "-"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "RDS-CUC-376: Browserfingerprints" in text
+    assert "Es werden keine Browserfingerprints gebildet" in text
+    assert "Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet." in text
+
+
+def text_section(text: str, heading_prefix: str) -> str:
+    start = text.index(heading_prefix)
+    next_heading = text.find("\n### ", start + 1)
+    return text[start:] if next_heading == -1 else text[start:next_heading]
 
 
 def test_pdf_uses_tall_screenshot_page_slot() -> None:
