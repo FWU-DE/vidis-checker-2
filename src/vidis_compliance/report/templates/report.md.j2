@@ -49,6 +49,14 @@ Diese Übersicht fasst Cookies, `localStorage` und `sessionStorage` für die bet
 
 {{ report.text }}
 
+**Einordnung und nächste Schritte**
+
+| Frage | Erklärung |
+| --- | --- |
+{% for item in report.beginner_explanation -%}
+| {{ item.label | table_escape }} | {{ item.value | table_escape }} |
+{% endfor %}
+
 **Nachweise**
 
 | Nachweis | Wert |

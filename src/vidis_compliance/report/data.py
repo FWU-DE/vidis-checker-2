@@ -36,6 +36,7 @@ class CriterionReport:
     criterion: VidisCriterion
     finding: CheckFinding
     text: str
+    beginner_explanation: list[EvidenceItem] = field(default_factory=list)
     evidence: list[EvidenceItem] = field(default_factory=list)
 
     @property
@@ -131,6 +132,7 @@ def build_report_document(
                 criterion=criterion,
                 finding=finding,
                 text=_explain_finding(criterion, finding),
+                beginner_explanation=_beginner_explanation(criterion, finding),
                 evidence=_evidence_for_finding(finding, raw_capture),
             )
         )
@@ -173,6 +175,74 @@ def _explain_finding(criterion: VidisCriterion, finding: CheckFinding) -> str:
         f"Das {obligation}-Kriterium \"{criterion.name}\" wurde im automatisierten Lauf "
         f"als {status_text} bewertet. Grundlage der Bewertung ist der erhobene Hinweis: {note}"
     )
+
+
+def _beginner_explanation(criterion: VidisCriterion, finding: CheckFinding) -> list[EvidenceItem]:
+    status_meaning = {
+        "PASS": "Dieses Kriterium wirkt aktuell erfüllt. Trotzdem sollte der Nachweis bei wichtigen Beschaffungs- oder Datenschutzentscheidungen kurz fachlich gegengeprüft werden.",
+        "FAIL": "Dieses Kriterium wirkt aktuell nicht erfüllt oder unvollständig. Der Report zeigt, welche Signale gefunden wurden und welche Punkte fehlen oder problematisch wirken.",
+        "MANUELL": "Hier ist eine fachliche oder technische Klärung nötig. Der automatische Lauf hat entweder keine belastbare Entscheidung getroffen oder das Kriterium benötigt grundsätzlich Kontextwissen.",
+    }.get(finding.status, "Der Status stammt aus dem automatisierten Lauf und sollte bei Unklarheiten manuell eingeordnet werden.")
+    why = _why_text(criterion)
+    next_steps = _next_steps_text(criterion, finding)
+    return [
+        EvidenceItem("Was bedeutet das?", status_meaning),
+        EvidenceItem("Warum ist das relevant?", why),
+        EvidenceItem("Nächste Schritte", next_steps),
+    ]
+
+
+def _why_text(criterion: VidisCriterion) -> str:
+    code = criterion.code
+    if code.startswith("RDS-IPF-"):
+        if code in {"RDS-IPF-364", "RDS-IPF-366"}:
+            return "Für Anfänger: Ein Impressum ist die gesetzliche Anbieterkennzeichnung. Es hilft Nutzenden, Schulen und Trägern zu erkennen, wer für das Angebot verantwortlich ist und wie der Anbieter erreichbar ist."
+        return "Für Anfänger: Die Datenschutzerklärung erklärt, wer Daten verarbeitet, zu welchem Zweck, auf welcher Rechtsgrundlage und welche Rechte betroffene Personen haben. Sie ist eine zentrale Entscheidungsgrundlage für Datenschutzprüfung und Beschaffung."
+    if code == "RDS-DSO-383":
+        return "Für Anfänger: Ein Datenschutzbeauftragter ist eine fachliche Kontaktstelle für Datenschutzfragen. Wenn er bestellt ist, müssen seine Kontaktdaten in den Datenschutzinformationen auffindbar sein."
+    if code.startswith("ITS-ENC-"):
+        return "Für Anfänger: Transportverschlüsselung schützt Daten auf dem Weg zwischen Browser und Anbieter. Ohne HTTPS können Inhalte oder Anmeldedaten leichter mitgelesen oder manipuliert werden."
+    if code.startswith("RDS-CUC-"):
+        return "Für Anfänger: Cookies und Browser-Speicher können technisch notwendig sein, aber auch Tracking oder Profilbildung ermöglichen. Deshalb müssen Zweck, Notwendigkeit und Einwilligung besonders nachvollziehbar sein."
+    if code.startswith("RDS-AGB-"):
+        return "Für Anfänger: AGB und Nutzungsbedingungen regeln, was Anbieter, Schulen und Nutzende dürfen oder müssen. Unklare oder problematische Klauseln können rechtliche und organisatorische Risiken erzeugen."
+    if code.startswith("RDS-DEV-") or code.startswith("RDS-DSO-"):
+        return "Für Anfänger: Diese Datenschutz- und Betreiberpflichten zeigen, ob Verantwortlichkeiten, Auftragsverarbeitung und Schutzmaßnahmen nachvollziehbar dokumentiert sind."
+    if code.startswith("RDS-WER-") or code.startswith("RDS-VIN-"):
+        return "Für Anfänger: Werbung, Beeinflussung und jugendgefährdende Inhalte sind im Bildungskontext besonders kritisch, weil Schülerinnen und Schüler besonders schutzbedürftig sind."
+    return f"Für Anfänger: Dieses VIDIS-Kriterium beschreibt eine Anforderung im Bereich {criterion.area}. Es hilft, technische, rechtliche oder organisatorische Risiken systematisch sichtbar zu machen."
+
+
+def _next_steps_text(criterion: VidisCriterion, finding: CheckFinding) -> str:
+    note = finding.note.strip()
+    if criterion.code == "RDS-IPF-366":
+        missing = _note_part(note, "fehlend")
+        detail = f" Fehlende Punkte laut Report: {missing}." if missing else ""
+        return "Prüfe die genannten fehlenden Punkte im Impressum und ergänze sie auf der öffentlich erreichbaren Impressumsseite oder kläre mit dem Anbieter, warum sie nicht erforderlich sind." + detail
+    if criterion.code == "RDS-IPF-367":
+        missing = _note_part(note, "fehlend")
+        detail = f" Fehlende Punkte laut Report: {missing}." if missing else ""
+        return "Prüfe die Datenschutzerklärung gegen die Art.-13-DSGVO-Pflichtinformationen und fordere fehlende Angaben beim Anbieter nach." + detail
+    if criterion.code == "RDS-DSO-383":
+        return "Prüfe, ob ein Datenschutzbeauftragter bestellt ist. Falls ja, müssen dessen Kontaktdaten in der Datenschutzerklärung leicht auffindbar sein; falls nein, sollte die Begründung fachlich geprüft werden."
+    if finding.status == "PASS":
+        return "Dokumentiere den Nachweis und prüfe stichprobenartig, ob die Aussage auch für Login-Bereiche, mobile Ansichten und produktive Mandanten gilt."
+    if finding.status == "FAIL":
+        return "Priorisiere die Behebung vor Freigabe oder Beschaffung. Nutze die Nachweise im Report, um Anbieter, Technik oder Datenschutzstelle gezielt um Korrektur oder Erklärung zu bitten."
+    if finding.status == "MANUELL":
+        return "Lies den Kriteriumstext und die Nachweise, prüfe die betroffenen Seiten/Dokumente manuell und dokumentiere eine fachliche Entscheidung mit Begründung."
+    return "Prüfe die Nachweise und dokumentiere die fachliche Entscheidung."
+
+
+def _note_part(note: str, label: str) -> str:
+    marker = f"{label}:"
+    if marker not in note:
+        return ""
+    value = note.split(marker, 1)[1]
+    for next_marker in ("; gefunden:", "; fehlend:", "; manuell zu prüfen:"):
+        if next_marker in value:
+            value = value.split(next_marker, 1)[0]
+    return value.strip().rstrip(".")
 
 
 def _classification_text(name: str) -> str:

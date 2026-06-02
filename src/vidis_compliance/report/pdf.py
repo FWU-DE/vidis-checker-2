@@ -93,6 +93,8 @@ def render_pdf(document: ReportDocument, output_pdf: Path) -> None:
             parts.append(Paragraph(_xml_escape(_compact_text(criterion.description.strip(), 900)), styles["BodyText"]))
         parts.append(Paragraph("Bewertung", styles["MiniHeading"]))
         parts.append(Paragraph(_xml_escape(_compact_report_text(report.text, 650)), styles["BodyText"]))
+        parts.append(Paragraph("Einordnung und nächste Schritte", styles["MiniHeading"]))
+        parts.append(_explanation_table(report.beginner_explanation))
         parts.append(Paragraph("Nachweise", styles["MiniHeading"]))
         parts.append(_evidence_table(report.evidence))
         parts.append(Spacer(1, 0.3 * cm))
@@ -234,6 +236,18 @@ def _evidence_table(items) -> Table:
         rows.append([
             Paragraph(_xml_escape(label), _small()),
             Paragraph(_xml_escape(_compact_evidence_value(value)), _small()),
+        ])
+    table = Table(rows, colWidths=[4.4 * cm, 11.0 * cm], repeatRows=1, hAlign="LEFT")
+    table.setStyle(_table_style())
+    return table
+
+
+def _explanation_table(items) -> Table:
+    rows = [[Paragraph("Frage", _small_bold()), Paragraph("Erklärung", _small_bold())]]
+    for item in items:
+        rows.append([
+            Paragraph(_xml_escape(_ascii_pdf_text(str(item.label))), _small()),
+            Paragraph(_xml_escape(_ascii_pdf_text(_compact_text(str(item.value), 520))), _small()),
         ])
     table = Table(rows, colWidths=[4.4 * cm, 11.0 * cm], repeatRows=1, hAlign="LEFT")
     table.setStyle(_table_style())
