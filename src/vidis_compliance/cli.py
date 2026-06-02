@@ -30,6 +30,7 @@ from .sources.agentic import (
 from .sources.code.inspect import inspect_code_path
 from .sources.documents.analyze import analyze_documents, build_document_inputs
 from .evidence import run_lighthouse, write_webinspector_exports
+from .coverage_matrix import write_coverage_matrix
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 import yaml
@@ -183,6 +184,10 @@ def check(
         (outdir / "document_capture.json").write_text(json.dumps(document_capture, ensure_ascii=False, indent=2), encoding="utf-8")
     if agent_capture is not None:
         (outdir / "agent_capture.json").write_text(json.dumps(agent_capture, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_coverage_matrix(
+        json_path=outdir / "coverage_matrix.json",
+        html_path=outdir / "coverage_matrix.html",
+    )
     if output_pdf:
         pdf_path = Path(output_pdf)
         pdf_path.parent.mkdir(parents=True, exist_ok=True)

@@ -133,3 +133,47 @@ def test_url_check_can_attach_lighthouse_and_webinspector_exports(tmp_path: Path
     assert capture["webinspector"]["network"] == "webinspector/network.json"
     assert (tmp_path / "results" / "evidence" / "lighthouse" / "report.json").exists()
     assert (tmp_path / "results" / "evidence" / "webinspector" / "network.json").exists()
+
+
+
+def test_check_writes_standalone_coverage_matrix_by_default(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    def fake_crawl(url: str, pages: int, headless: bool, **kwargs) -> PageCapture:
+        return PageCapture(
+            url=url,
+            cookies=[],
+            local_storage={},
+            session_storage={},
+            scripts=[],
+            requests=[],
+            resources=[],
+            links=[],
+            visible_text=[],
+        )
+
+    monkeypatch.setattr("vidis_compliance.cli.crawl", fake_crawl)
+    monkeypatch.setattr("vidis_compliance.cli.check_site_transport", lambda url: [])
+    monkeypatch.setattr(
+        "vidis_compliance.cli.analyze_ipf_site",
+        lambda url: IpfSiteAnalysis(
+            source_url=url,
+            visited_urls=[url],
+            impressum=LegalPageResult(kind="impressum"),
+            privacy=LegalPageResult(kind="privacy"),
+        ),
+    )
+    monkeypatch.setattr("vidis_compliance.cli.findings_from_ipf_analysis", lambda analysis: [])
+
+    result = CliRunner().invoke(app, ["check", "--url", "https://example.test", "--output", "coverage-default"])
+
+    assert result.exit_code == 0, result.output
+    outdir = tmp_path / "results" / "coverage-default"
+    assert (outdir / "coverage_matrix.json").exists()
+    assert (outdir / "coverage_matrix.html").exists()
+    matrix = json.loads((outdir / "coverage_matrix.json").read_text(encoding="utf-8"))
+    assert matrix["title"] == "VIDIS Coverage Matrix"
+    assert any(row["code"] == "RDS-CUC-371" for row in matrix["rows"])
+    html = (outdir / "coverage_matrix.html").read_text(encoding="utf-8")
+    assert "VIDIS Coverage Matrix" in html
+    assert "RDS-CUC-371" in html

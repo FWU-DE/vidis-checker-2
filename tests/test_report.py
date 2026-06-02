@@ -318,6 +318,30 @@ def test_generate_pdf_contains_full_manual_criterion_text(tmp_path: Path) -> Non
     assert "Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet." in text
 
 
+
+def test_generate_pdf_contains_coverage_matrix_appendix(tmp_path: Path) -> None:
+    import subprocess
+
+    result = JobResult(
+        job_id="coverage-pdf",
+        findings=[CheckFinding(criterion="ITS-ENC-359", status="PASS", note="HTTPS 200")],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(result, output, raw_capture={"url": "https://example.test"})
+
+    text = subprocess.run(
+        ["pdftotext", str(output), "-"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "Anhang: Coverage Matrix" in text
+    assert "RDS-CUC-371" in text
+    assert "PLATFORM-AUTH-PERSONA-CRAWL" in text
+    assert "Implementation status" in text
+
+
 def text_section(text: str, heading_prefix: str) -> str:
     start = text.index(heading_prefix)
     next_heading = text.find("\n### ", start + 1)

@@ -21,6 +21,7 @@ from reportlab.platypus import (
 )
 
 from ..models import JobResult
+from ..coverage_matrix import build_coverage_matrix
 from .data import ReportDocument, build_report_document
 from .markdown import _sanitize_raw_capture
 
@@ -81,6 +82,9 @@ def render_pdf(document: ReportDocument, output_pdf: Path) -> None:
     if screenshot_pages:
         story.append(PageBreak())
         story.extend(screenshot_pages)
+
+    story.append(PageBreak())
+    story.extend(_coverage_matrix_pages(styles))
 
     story.append(PageBreak())
     story.append(Paragraph("Anhang: Rohdaten der Erfassung", styles["SectionTitle"]))
@@ -232,6 +236,44 @@ def _screenshot_pages(document: ReportDocument, styles) -> list:
     if len(usable) > 6:
         flow.append(Paragraph(f"Weitere {len(usable) - 6} Screenshot(s) liegen als Artefakte im Ergebnisordner.", styles["BodyText"]))
     return flow
+
+
+def _coverage_matrix_pages(styles) -> list:
+    matrix = build_coverage_matrix()
+    rows = [row for row in matrix["rows"] if row.get("kind") == "criterion"]
+    gap_rows = [row for row in matrix["rows"] if row.get("kind") == "platform_gap"]
+    flow = [
+        Paragraph("Anhang: Coverage Matrix", styles["SectionTitle"]),
+        Paragraph(
+            "Die Matrix zeigt, welche VIDIS-Prüfkriterien und Plattformfähigkeiten automatisiert, teilweise automatisiert oder manuell abgedeckt sind. "
+            "Spalten: Code, Name, Implementation status, Automation level.",
+            styles["BodyText"],
+        ),
+        _coverage_table(rows),
+    ]
+    if gap_rows:
+        flow.append(Spacer(1, 0.35 * cm))
+        flow.append(Paragraph("Plattformfähigkeiten", styles["MiniHeading"]))
+        flow.append(Paragraph(_xml_escape(", ".join(str(row.get("code")) for row in gap_rows)), styles["BodyText"]))
+        flow.append(_coverage_table(gap_rows))
+    return flow
+
+
+def _coverage_table(rows: list[dict]) -> Table:
+    header = ["Code", "Name", "Implementation status", "Automation level"]
+    table_rows = [[Paragraph(cell, _small_bold()) for cell in header]]
+    for row in rows:
+        table_rows.append(
+            [
+                Paragraph(_xml_escape(str(row.get("code", "—"))), _small()),
+                Paragraph(_xml_escape(_compact_text(str(row.get("name", "—")), 90)), _small()),
+                Paragraph(_xml_escape(str(row.get("implementation_status", "—"))), _small()),
+                Paragraph(_xml_escape(_compact_text(str(row.get("automation_level", "—")), 120)), _small()),
+            ]
+        )
+    table = Table(table_rows, colWidths=[3.7 * cm, 4.7 * cm, 3.0 * cm, 4.0 * cm], repeatRows=1, hAlign="LEFT")
+    table.setStyle(_table_style())
+    return table
 
 
 def _screenshots(document: ReportDocument) -> list[dict]:
