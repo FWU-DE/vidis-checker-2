@@ -64,7 +64,6 @@ def test_write_coverage_matrix_outputs_html_and_json(tmp_path: Path) -> None:
     assert json_path.exists()
 
 
-
 def test_rds_cuc_453_coverage_documents_privacy_text_requirement() -> None:
     matrix = build_coverage_matrix()
 
@@ -75,3 +74,15 @@ def test_rds_cuc_453_coverage_documents_privacy_text_requirement() -> None:
     assert "document" in row["input_needed"].lower()
     assert "document_capture.json" in row["evidence_artifacts"]
     assert "Datenschutzerklärungstexte" in row["known_limitations"]
+
+
+def test_rds_cuc_375_coverage_distinguishes_signal_collection_from_manual_decision() -> None:
+    matrix = build_coverage_matrix()
+
+    row = next(row for row in matrix["rows"] if row["code"] == "RDS-CUC-375")
+
+    assert row["implementation_status"] == "partially automated"
+    assert "automated signal collection" in row["automation_level"]
+    assert "legal-purpose decision manual" in row["automation_level"]
+    assert "IndexedDB/Cache/ServiceWorker" in row["known_limitations"]
+

@@ -7,6 +7,10 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 from vidis_compliance.checks.site.cookies import _is_sus_audience
+from vidis_compliance.checks.site.device_storage import (
+    device_storage_decision,
+    device_storage_signal_from_code_evidence,
+)
 from vidis_compliance.models import CheckFinding
 
 TEXT_EXTENSIONS = {
@@ -204,6 +208,21 @@ def _findings_from_inspection(inspection: CodeInspection, audience: str) -> list
     tracking_status = "FAIL" if inspection.tracking and _is_sus_audience(audience) else "MANUELL"
     storage_status = "FAIL" if inspection.storage and _is_sus_audience(audience) else "MANUELL"
 
+    device_storage_signals = [
+        device_storage_signal_from_code_evidence(
+            _device_storage_api_from_evidence(item),
+            item.file,
+            item.line,
+            item.value,
+        )
+        for item in inspection.device_storage
+    ]
+    device_storage_status, device_storage_note = (
+        device_storage_decision(device_storage_signals, audience)
+        if device_storage_signals
+        else ("PASS", "Keine IndexedDB/Cache/Service-Worker-Storage-Nutzung im Quellcode gefunden")
+    )
+
     findings = [
         CheckFinding(
             criterion="RDS-IPF-364",
@@ -235,10 +254,8 @@ def _findings_from_inspection(inspection: CodeInspection, audience: str) -> list
         ),
         CheckFinding(
             criterion="RDS-CUC-375",
-            status="MANUELL" if inspection.device_storage else "PASS",
-            note=_evidence_note("Device-/Browser-Storage-APIs im Quellcode", inspection.device_storage)
-            if inspection.device_storage
-            else "Keine IndexedDB/Cache/Service-Worker-Storage-Nutzung im Quellcode gefunden",
+            status=device_storage_status,
+            note=device_storage_note,
         ),
         CheckFinding(
             criterion="RDS-CUC-376",
@@ -280,6 +297,11 @@ def _findings_from_inspection(inspection: CodeInspection, audience: str) -> list
 def _looks_like_script_asset(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.path.lower().endswith(".js") or "/js" in parsed.path.lower()
+
+
+def _device_storage_api_from_evidence(item: CodeEvidence) -> str:
+    prefix = item.value.split(":", 1)[0].strip()
+    return prefix if prefix in DEVICE_STORAGE_PATTERNS else item.value
 
 
 def _compact(value: str, max_len: int = 160) -> str:

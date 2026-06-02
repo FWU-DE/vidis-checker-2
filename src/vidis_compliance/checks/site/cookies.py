@@ -319,11 +319,9 @@ def _signal_api_names(data: Dict[str, Any], group: str) -> list[str]:
 
 
 def classify_device_storage_access(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
-    """RDS-CUC-375: IndexedDB/Cache/Service-Worker storage access is evidence, not automatically prohibited."""
-    hits = _signal_api_names(data, 'device_storage')
-    if hits:
-        return 'MANUELL', f"Device-/Browser-Storage-APIs genutzt: {', '.join(hits[:10])}"
-    return 'PASS', 'Keine IndexedDB/Cache/Service-Worker-Storage-Zugriffe erkannt'
+    from .device_storage import classify_device_storage_access as _classify_device_storage_access
+
+    return _classify_device_storage_access(data, audience)
 
 
 def classify_browser_fingerprinting(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
