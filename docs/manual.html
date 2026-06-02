@@ -265,6 +265,7 @@ uv run pytest -q</code></pre>
         </tbody>
       </table>
       <p>Für <code>RDS-CUC-371</code>/<code>RDS-CUC-372</code> bewertet der Website-Check Cookies, <code>localStorage</code> und <code>sessionStorage</code> gemeinsam. Namen werden gegen die gebündelte Cookie-Datenbank sowie erlaubte funktionale/security-nahe Speicher-Präfixe geprüft; Reports listen die gefundenen Cookie- und Storage-Schlüssel ohne Storage-Werte auf.</p>
+      <p>Für <code>RDS-CUC-453</code> gleicht der Website-Check das beobachtete Cookie-/Storage-Inventar gegen verfügbare Datenschutzerklärungstexte aus <code>--privacy-url</code> oder passenden <code>--document</code>-Eingaben ab. <code>PASS</code> wird nur vergeben, wenn alle beobachteten Cookie-Namen, <code>localStorage</code>- und <code>sessionStorage</code>-Schlüssel oder dokumentierte Äquivalente beschrieben sind; klare fehlende Beschreibungen führen zu <code>FAIL</code>. Fehlt der Datenschutztext oder ist der semantische Abgleich unklar, bleibt das Kriterium <code>MANUELL</code>. Reports zeigen vollständige Matches/Misses, aber keine Storage-Werte.</p>
       <h3>Beispielansichten</h3>
       <div class="grid">
         <figure class="card">

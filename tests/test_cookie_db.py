@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 
 from vidis_compliance.checks.site.cookie_db import CookieDatabase
-from vidis_compliance.checks.site.cookies import classify_cookies
+from vidis_compliance.checks.site.cookies import (
+    classify_cookie_description_completeness,
+    classify_cookies,
+)
 
 
 def _write_cookie_db(path: Path) -> None:
@@ -190,3 +193,90 @@ def test_classify_cookies_reports_unknown_storage_keys_for_manual_review(tmp_pat
     assert "Unbekannter SessionStorage" in note
     assert "unknownSession" in note
     assert "secret" not in note
+
+
+
+def test_rds_cuc_453_passes_when_privacy_text_describes_all_observed_entries(tmp_path: Path) -> None:
+    db_path = tmp_path / "cookie_db.json"
+    _write_cookie_db(db_path)
+    database = CookieDatabase(db_path)
+
+    status, note, evidence = classify_cookie_description_completeness(
+        {
+            "cookies": [{"name": "CookieConsent"}, {"name": "_ga_ABC123"}],
+            "local_storage": {"matomo.id": "visitor"},
+            "session_storage": {"csrf_token": "secret"},
+        },
+        privacy_text=(
+            "Datenschutzerklärung Cookies: CookieConsent speichert Ihre Cookie-Einwilligung "
+            "für ein Jahr. Google Analytics verwendet _ga_ABC123 zu Statistikzwecken "
+            "mit Speicherdauer zwei Jahre. LocalStorage matomo.id dient der Reichweitenmessung. "
+            "SessionStorage csrf_token schützt Formulare gegen CSRF-Angriffe."
+        ),
+        cookie_database=database,
+    )
+
+    assert status == "PASS"
+    assert "Beschrieben" in note
+    assert "CookieConsent" in note
+    assert "_ga_ABC123" in note
+    assert "matomo.id" in note
+    assert "csrf_token" in note
+    assert "visitor" not in note
+    assert "secret" not in note
+    assert evidence["missing"] == []
+
+
+def test_rds_cuc_453_fails_when_observed_cookie_is_not_described(tmp_path: Path) -> None:
+    db_path = tmp_path / "cookie_db.json"
+    _write_cookie_db(db_path)
+    database = CookieDatabase(db_path)
+
+    status, note, evidence = classify_cookie_description_completeness(
+        {"cookies": [{"name": "CookieConsent"}, {"name": "IDE"}]},
+        privacy_text="Datenschutzerklärung: CookieConsent speichert Ihre Cookie-Einwilligung für ein Jahr.",
+        cookie_database=database,
+    )
+
+    assert status == "FAIL"
+    assert "Fehlende Beschreibung" in note
+    assert "IDE" in note
+    assert "CookieConsent" in note
+    assert evidence["missing"] == ["Cookie: IDE"]
+    assert evidence["present"] == ["Cookie: CookieConsent"]
+
+
+def test_rds_cuc_453_is_manual_when_privacy_text_is_missing(tmp_path: Path) -> None:
+    db_path = tmp_path / "cookie_db.json"
+    _write_cookie_db(db_path)
+    database = CookieDatabase(db_path)
+
+    status, note, evidence = classify_cookie_description_completeness(
+        {"cookies": [{"name": "CookieConsent"}]},
+        privacy_text="",
+        cookie_database=database,
+    )
+
+    assert status == "MANUELL"
+    assert "Datenschutzerklärungstext fehlt" in note
+    assert evidence["observed"] == ["Cookie: CookieConsent"]
+
+
+def test_rds_cuc_453_checks_storage_keys_without_storage_values(tmp_path: Path) -> None:
+    db_path = tmp_path / "cookie_db.json"
+    _write_cookie_db(db_path)
+    database = CookieDatabase(db_path)
+
+    status, note, evidence = classify_cookie_description_completeness(
+        {"local_storage": {"appTheme": "dark", "matomo.id": "visitor"}},
+        privacy_text="Datenschutzerklärung: LocalStorage appTheme speichert die Darstellungseinstellung.",
+        cookie_database=database,
+    )
+
+    assert status == "FAIL"
+    assert "LocalStorage: appTheme" in note
+    assert "LocalStorage: matomo.id" in note
+    assert "dark" not in note
+    assert "visitor" not in note
+    assert evidence["present"] == ["LocalStorage: appTheme"]
+    assert evidence["missing"] == ["LocalStorage: matomo.id"]
