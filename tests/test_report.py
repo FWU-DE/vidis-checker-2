@@ -252,3 +252,10 @@ def test_generate_markdown_includes_criteria_missing_from_result_as_untested(tmp
     assert "### RDS-AGB-368:" in text
     assert "als manuell zu prüfen bewertet" in text
     assert "Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet." in text
+
+
+
+def test_pdf_uses_tall_screenshot_page_slot() -> None:
+    import vidis_compliance.report.pdf as pdf
+
+    assert pdf.SCREENSHOT_MAX_HEIGHT_CM >= 20.0

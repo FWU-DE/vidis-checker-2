@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Sequence
 from urllib.parse import urldefrag, urljoin, urlparse
 
-from playwright.sync_api import BrowserContext, Page, sync_playwright
+from playwright.sync_api import BrowserContext, Page, ViewportSize, sync_playwright
+
+SCREENSHOT_VIEWPORT = ViewportSize(width=1280, height=1400)
 
 JS_LOCAL = """
 () => {
@@ -364,6 +366,7 @@ def _capture_page(
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = screenshot_dir / filename
         page.screenshot(path=str(screenshot_path), full_page=False)
+        viewport = getattr(page, "viewport_size", None) or SCREENSHOT_VIEWPORT
         screenshots.append(
             {
                 "label": label,
@@ -372,6 +375,8 @@ def _capture_page(
                 "path": str(screenshot_path),
                 "authenticated": bool(authenticated),
                 "local_only": bool(authenticated),
+                "viewport_width": int(viewport.get("width") or SCREENSHOT_VIEWPORT["width"]),
+                "viewport_height": int(viewport.get("height") or SCREENSHOT_VIEWPORT["height"]),
             }
         )
     return PageCapture(
@@ -427,7 +432,7 @@ def crawl(
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        context = browser.new_context()
+        context = browser.new_context(viewport=SCREENSHOT_VIEWPORT)
         page = context.new_page()
         request_log: List[str] = []
         page.on("requestfinished", lambda req: request_log.append(req.url))

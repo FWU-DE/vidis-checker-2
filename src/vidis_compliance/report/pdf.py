@@ -26,6 +26,7 @@ from .markdown import _sanitize_raw_capture
 
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
+SCREENSHOT_MAX_HEIGHT_CM = 20.6
 
 
 def generate_pdf(
@@ -213,7 +214,7 @@ def _screenshot_pages(document: ReportDocument, styles) -> list:
         flow.append(Paragraph("Keine einbettbaren Screenshot-Dateien vorhanden.", styles["BodyText"]))
         return flow
     max_width = PAGE_WIDTH - 2.7 * cm
-    max_height = 13.8 * cm
+    max_height = SCREENSHOT_MAX_HEIGHT_CM * cm
     for index, (screenshot, path) in enumerate(usable[:6], start=1):
         label = str(screenshot.get("label") or f"Screenshot {index}")
         url = str(screenshot.get("url") or "")

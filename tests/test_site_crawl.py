@@ -17,6 +17,7 @@ class FakeContext:
 
 class FakePage:
     url = "https://example.test/"
+    viewport_size = {"width": 1280, "height": 1400}
 
     def __init__(self):
         self.events = []
@@ -265,7 +266,27 @@ def test_capture_page_records_screenshot_metadata_without_embedding_image_bytes(
             "path": str(tmp_path / "page-3.png"),
             "authenticated": False,
             "local_only": False,
+            "viewport_width": 1280,
+            "viewport_height": 1400,
         }
     ]
     assert (tmp_path / "page-3.png").read_bytes() == b"fixture-png"
     assert ("screenshot", str(tmp_path / "page-3.png"), False) in page.events
+
+
+
+def test_capture_page_records_tall_viewport_dimensions_for_pdf_screenshots(tmp_path: Path):
+    page = FakePage()
+
+    capture = _capture_page(
+        page,
+        FakeContext(),
+        "https://example.test/tall",
+        requests=[],
+        screenshot_dir=tmp_path,
+        screenshot_index=4,
+    )
+
+    screenshot = capture.screenshots[0]
+    assert screenshot["viewport_width"] == 1280
+    assert screenshot["viewport_height"] >= 1200
