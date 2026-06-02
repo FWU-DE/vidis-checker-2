@@ -11,6 +11,9 @@ import httpx
 from ...models import CheckFinding
 
 UserAgent = "vidis-compliance/0.1 (+https://fwu.de)"
+DSO_383_SIGNAL = "Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO)"
+DSO_383_LEGAL_BASIS = "Art. 13 Abs. 1 lit. b DSGVO — Kontaktdaten des Datenschutzbeauftragten, falls vorhanden"
+DSO_383_LEGAL_URL = "https://dejure.org/gesetze/DSGVO/13.html"
 FetchResult = tuple[int, str]
 Fetcher = Callable[[str], FetchResult]
 
@@ -24,6 +27,7 @@ class LegalPageResult:
     found_signals: list[str] = field(default_factory=list)
     missing_signals: list[str] = field(default_factory=list)
     manual_signals: list[str] = field(default_factory=list)
+    dpo_absent_declared: bool = False
     error: str = ""
 
 
@@ -142,6 +146,16 @@ def _contains_regex(text: str, pattern: str) -> bool:
     return bool(re.search(pattern, text, flags=re.I | re.S))
 
 
+def _declares_no_dpo(text: str) -> bool:
+    return _contains_regex(
+        text,
+        r"(?:kein(?:e|en|er)?|nicht)\s+(?:datenschutzbeauftrag(?:ter|te|ten|tenstelle)?|dsb)\s+(?:benannt|bestellt|vorhanden|erforderlich)",
+    ) or _contains_regex(
+        text,
+        r"(?:datenschutzbeauftrag(?:ter|te|ten)?|dsb)\s+(?:ist|wurde)\s+(?:nicht|kein(?:e|en|er)?)\s+(?:benannt|bestellt|erforderlich|vorhanden)",
+    )
+
+
 def _impressum_signals(text: str) -> dict[str, bool]:
     has_identity = _contains_any(text, ["diensteanbieter", "anbieter", "impressum", "gmbh", "ug", "ag", "e.v.", "inhaber"])
     has_address = bool(re.search(r"\b\d{5}\b", text)) or _contains_any(text, ["straße", "strasse", "platz", "weg", "allee", "anschrift", "sitz"])
@@ -175,11 +189,10 @@ def _privacy_signals(text: str) -> dict[str, bool]:
     return {
         "Name und Kontaktdaten des Verantwortlichen (Art. 13 Abs. 1 lit. a DSGVO)": _contains_any(text, ["verantwortlich", "controller", "anbieter", "betreiber"])
         and (_has_email_or_phone(text) or _contains_any(text, ["anschrift", "straße", "strasse", "kontakt"])),
-        "Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO)": _contains_any(
+        DSO_383_SIGNAL: _contains_any(
             text,
             ["datenschutzbeauftrag", "data protection officer", "datenschutz@", "dsb@"],
-        )
-        or _has_email_or_phone(text),
+        ),
         "Verarbeitungszwecke (Art. 13 Abs. 1 lit. c DSGVO)": _contains_any(text, ["zweck", "purposes", "verarbeiten", "verarbeitung"]),
         "Rechtsgrundlagen (Art. 13 Abs. 1 lit. c DSGVO)": _contains_any(text, ["rechtsgrundlage", "art. 6", "artikel 6", "legitimate", "einwilligung"]),
         "Empfänger/Kategorien (Art. 13 Abs. 1 lit. e DSGVO)": _contains_any(text, ["empfänger", "recipient", "auftragsverarbeiter", "processor", "dritte"]),
@@ -220,6 +233,7 @@ def _result_for_page(kind: str, url: str, fetch: Fetcher) -> LegalPageResult:
         found_signals=found,
         missing_signals=missing,
         manual_signals=manual,
+        dpo_absent_declared=kind == "privacy" and _declares_no_dpo(text),
     )
 
 
@@ -296,12 +310,39 @@ def _completeness_finding(criterion: str, label: str, page: LegalPageResult) -> 
     )
 
 
+def _dpo_finding(page: LegalPageResult) -> CheckFinding:
+    if not page.reachable:
+        return CheckFinding(
+            criterion="RDS-DSO-383",
+            status="MANUELL",
+            note=f"Datenschutzbeauftragter nicht bewertbar: {page.error or page.url or 'Datenschutzerklärung nicht gefunden'}; Herleitung: {DSO_383_LEGAL_BASIS}; Gesetz: {DSO_383_LEGAL_URL}",
+        )
+    if page.dpo_absent_declared:
+        return CheckFinding(
+            criterion="RDS-DSO-383",
+            status="FAIL",
+            note=f"Datenschutzerklärung erklärt, dass kein Datenschutzbeauftragter benannt/bestellt ist: {page.url}; Herleitung: {DSO_383_LEGAL_BASIS}; Gesetz: {DSO_383_LEGAL_URL}",
+        )
+    if DSO_383_SIGNAL in page.found_signals:
+        return CheckFinding(
+            criterion="RDS-DSO-383",
+            status="PASS",
+            note=f"Datenschutzbeauftragter-Kontakt gefunden: {page.url}; Herleitung: {DSO_383_LEGAL_BASIS}; Gesetz: {DSO_383_LEGAL_URL}",
+        )
+    return CheckFinding(
+        criterion="RDS-DSO-383",
+        status="MANUELL",
+        note=f"Kein eindeutig benannter Datenschutzbeauftragter mit Kontakt gefunden: {page.url}; Herleitung: {DSO_383_LEGAL_BASIS}; Gesetz: {DSO_383_LEGAL_URL}",
+    )
+
+
 def findings_from_ipf_analysis(analysis: IpfSiteAnalysis) -> list[CheckFinding]:
     return [
         _reachability_finding("RDS-IPF-364", "Impressum", analysis.impressum),
         _reachability_finding("RDS-IPF-365", "Datenschutzerklärung", analysis.privacy),
         _completeness_finding("RDS-IPF-366", "Impressum", analysis.impressum),
         _completeness_finding("RDS-IPF-367", "Datenschutzerklärung", analysis.privacy),
+        _dpo_finding(analysis.privacy),
     ]
 
 

@@ -76,11 +76,14 @@ def test_ipf_analysis_produces_four_non_placeholder_pass_findings_for_complete_p
     )
     findings = {finding.criterion: finding for finding in findings_from_ipf_analysis(analysis)}
 
-    assert set(findings) == {"RDS-IPF-364", "RDS-IPF-365", "RDS-IPF-366", "RDS-IPF-367"}
+    assert set(findings) == {"RDS-IPF-364", "RDS-IPF-365", "RDS-IPF-366", "RDS-IPF-367", "RDS-DSO-383"}
     assert {finding.status for finding in findings.values()} == {"PASS"}
     assert "Not yet implemented" not in " ".join(finding.note for finding in findings.values())
     assert "https://example.test/impressum" in findings["RDS-IPF-364"].note
     assert "https://example.test/datenschutz" in findings["RDS-IPF-367"].note
+    assert findings["RDS-DSO-383"].status == "PASS"
+    assert "Art. 13 Abs. 1 lit. b DSGVO" in findings["RDS-DSO-383"].note
+    assert "https://example.test/datenschutz" in findings["RDS-DSO-383"].note
 
 
 def test_ipf_analysis_fails_missing_live_impressum_and_privacy_pages():
@@ -123,6 +126,35 @@ def test_ipf_analysis_distinguishes_reachable_but_incomplete_pages():
     assert "fehlend" in findings["RDS-IPF-366"].note.lower()
     assert "kontakt" in findings["RDS-IPF-366"].note.lower()
     assert "rechtsgrundlagen" in findings["RDS-IPF-367"].note.lower()
+    assert findings["RDS-DSO-383"].status == "MANUELL"
+    assert "Kein eindeutig benannter Datenschutzbeauftragter" in findings["RDS-DSO-383"].note
+    assert "Art. 13 Abs. 1 lit. b DSGVO" in findings["RDS-DSO-383"].note
+
+
+def test_ipf_dso_383_fails_when_privacy_page_declares_no_dpo_named():
+    home = """
+    <a href="/datenschutz">Datenschutzerklärung</a>
+    <a href="/impressum">Impressum</a>
+    """
+    privacy = """
+    Datenschutzerklärung. Verantwortlicher: Example Learning GmbH, info@example.test.
+    Es ist kein Datenschutzbeauftragter benannt.
+    """
+
+    analysis = analyze_ipf_site(
+        "https://example.test/",
+        fetch=_fetcher(
+            {
+                "https://example.test/": (200, home),
+                "https://example.test/impressum": (200, "Impressum Example GmbH, 10115 Berlin, info@example.test"),
+                "https://example.test/datenschutz": (200, privacy),
+            }
+        ),
+    )
+    findings = {finding.criterion: finding for finding in findings_from_ipf_analysis(analysis)}
+
+    assert findings["RDS-DSO-383"].status == "FAIL"
+    assert "kein datenschutzbeauftragter benannt" in findings["RDS-DSO-383"].note.lower()
 
 
 def test_ipf_analysis_uses_legacy_detail_points_for_imprint_and_privacy_policy():
@@ -218,7 +250,7 @@ def test_cli_site_check_writes_ipf_urls_to_capture_and_report(tmp_path: Path, mo
                 status_code=200,
                 found_signals=[
                     "Verantwortlicher",
-                    "DSB/Kontakt",
+                    "Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO)",
                     "Zwecke",
                     "Rechtsgrundlagen",
                     "Empfänger",
@@ -246,6 +278,8 @@ def test_cli_site_check_writes_ipf_urls_to_capture_and_report(tmp_path: Path, mo
     payload = json.loads((tmp_path / "results" / "ipfjob" / "result.json").read_text(encoding="utf-8"))
     by_code = {finding["criterion"]: finding for finding in payload["findings"]}
     assert by_code["RDS-IPF-364"]["status"] == "PASS"
+    assert by_code["RDS-DSO-383"]["status"] == "PASS"
+    assert "Art. 13 Abs. 1 lit. b DSGVO" in by_code["RDS-DSO-383"]["note"]
     assert "https://example.test/impressum" in by_code["RDS-IPF-366"]["note"]
     capture = json.loads((tmp_path / "results" / "ipfjob" / "capture.json").read_text(encoding="utf-8"))
     assert capture["ipf"]["visited_urls"] == [

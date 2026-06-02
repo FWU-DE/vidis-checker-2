@@ -285,6 +285,11 @@ def _evidence_for_finding(
         visited = ipf.get("visited_urls") or []
         if visited:
             evidence.append(EvidenceItem("Besuchte IPF-URLs", ", ".join(str(url) for url in visited)))
+    if finding.criterion == "RDS-DSO-383":
+        ipf = raw_capture.get("ipf") or {}
+        if ipf.get("privacy_url"):
+            evidence.append(EvidenceItem("Datenschutzerklärung-URL", str(ipf["privacy_url"])))
+        _append_dso_383_evidence(evidence, ipf)
     _append_external_audit_evidence(evidence, raw_capture)
     _append_screenshot_evidence(evidence, raw_capture, finding.criterion)
     return evidence
@@ -300,6 +305,25 @@ def _append_ipf_evidence(evidence: list[EvidenceItem], ipf: dict[str, Any], key:
         evidence.append(EvidenceItem(f"{label}: fehlend", "; ".join(str(item) for item in missing)))
     if manual:
         evidence.append(EvidenceItem(f"{label}: manuell zu prüfen", "; ".join(str(item) for item in manual)))
+
+
+def _append_dso_383_evidence(evidence: list[EvidenceItem], ipf: dict[str, Any]) -> None:
+    found = [str(item) for item in ipf.get("privacy_found") or []]
+    missing = [str(item) for item in ipf.get("privacy_missing") or []]
+    dpo_found = next((item for item in found if "Datenschutzbeauftrag" in item or "Art. 13 Abs. 1 lit. b" in item), "")
+    dpo_missing = next((item for item in missing if "Datenschutzbeauftrag" in item or "Art. 13 Abs. 1 lit. b" in item), "")
+    if dpo_found:
+        evidence.append(EvidenceItem("Datenschutzbeauftragter-Signal", dpo_found))
+    elif dpo_missing:
+        evidence.append(EvidenceItem("Datenschutzbeauftragter-Signal", f"fehlend: {dpo_missing}"))
+    if ipf.get("privacy_dpo_absent_declared"):
+        evidence.append(EvidenceItem("DSB-Negativangabe", "Datenschutzerklärung erklärt, dass kein Datenschutzbeauftragter benannt/bestellt ist."))
+    evidence.append(
+        EvidenceItem(
+            "Gesetzliche Grundlage",
+            "Art. 13 Abs. 1 lit. b DSGVO — Kontaktdaten des Datenschutzbeauftragten, falls vorhanden; https://dejure.org/gesetze/DSGVO/13.html",
+        )
+    )
 
 
 def _append_external_audit_evidence(evidence: list[EvidenceItem], raw_capture: dict[str, Any]) -> None:

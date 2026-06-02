@@ -87,6 +87,40 @@ def test_generate_pdf_includes_semantic_disclaimer_for_ipf_evaluation(tmp_path: 
     assert "ersetzt keine rechtliche oder datenschutzfachliche Pruefung" in extracted
 
 
+def test_generate_markdown_includes_dso_383_ipf_evidence_and_legal_basis(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[
+            CheckFinding(
+                criterion="RDS-DSO-383",
+                status="PASS",
+                note="Datenschutzbeauftragter-Kontakt gefunden: https://example.test/datenschutz; Herleitung: Art. 13 Abs. 1 lit. b DSGVO",
+            )
+        ],
+    )
+    output = tmp_path / "report.md"
+
+    generate_markdown(
+        result,
+        output,
+        raw_capture={
+            "url": "https://example.test",
+            "ipf": {
+                "privacy_url": "https://example.test/datenschutz",
+                "privacy_found": ["Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO)"],
+                "privacy_missing": [],
+            },
+        },
+    )
+
+    text = output.read_text(encoding="utf-8")
+    section = text_section(text, "### RDS-DSO-383:")
+    assert "| Datenschutzerklärung-URL | https://example.test/datenschutz |" in section
+    assert "| Datenschutzbeauftragter-Signal | Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO) |" in section
+    assert "| Gesetzliche Grundlage | Art. 13 Abs. 1 lit. b DSGVO" in section
+    assert "https://dejure.org/gesetze/DSGVO/13.html" in section
+
+
 def test_generate_markdown_lists_browser_signal_evidence_without_storage_values(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",
