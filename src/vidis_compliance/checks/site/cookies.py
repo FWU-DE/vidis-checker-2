@@ -17,12 +17,70 @@ TRACKER_COOKIE_PREFIXES = [
 ]
 
 STORAGE_TRACKER_KEYS = [
-    'ga:', 'ajs:', 'amplitude', 'mixpanel', 'hj-session', 'fb', 'clarity'
+    'ga:', 'ajs:', 'amplitude', 'mixpanel', 'hj-session', 'fb', 'clarity', 'matomo', 'piwik', '_ga'
+]
+
+ALLOWED_STORAGE_PREFIXES = [
+    'cookieconsent',
+    'cookiebot',
+    'cookie_consent',
+    'consent',
+    'csrf',
+    'xsrf',
+    'session',
+    'phpsessid',
+    'jsessionid',
 ]
 
 
 def _is_sus_audience(audience: str) -> bool:
     return audience.lower() in ('sus', 'schueler', 'schüler', 'schuelerinnen', 'beide')
+
+
+def _storage_key_allowed_by_prefix(key: str) -> bool:
+    lowered = key.lower()
+    return any(lowered == prefix or lowered.startswith(prefix) for prefix in ALLOWED_STORAGE_PREFIXES)
+
+
+def _classify_name(name: str, database: CookieDatabase) -> tuple[str, str]:
+    """Return (bucket, detail) where bucket is essential/non_essential/unknown."""
+    db_result = database.is_cookie_essential(name)
+    if db_result is not None:
+        is_essential, cookie_info = db_result
+        detail = f"{name} ({cookie_info.platform}, {cookie_info.category})"
+        return ("essential" if is_essential else "non_essential", detail)
+
+    fallback_hit = next(
+        (prefix for prefix in TRACKER_COOKIE_PREFIXES if name.lower().startswith(prefix.lower())),
+        None,
+    )
+    if fallback_hit is not None:
+        return "non_essential", f"{name} (Heuristik: Tracker-Präfix {fallback_hit})"
+    if _storage_key_allowed_by_prefix(name):
+        return "essential", f"{name} (Allowlist-Präfix)"
+    if any(needle in name.lower() for needle in STORAGE_TRACKER_KEYS):
+        return "non_essential", f"{name} (Heuristik: Tracking-/Analyse-Storage)"
+    return "unknown", name
+
+
+def _append_storage_classification(
+    *,
+    values: Dict[str, Any],
+    label: str,
+    database: CookieDatabase,
+    essential_details: list[str],
+    non_essential_details: list[str],
+    unknown_details: list[str],
+) -> None:
+    for key in sorted({str(k).strip() for k in values.keys() if str(k).strip()}):
+        bucket, detail = _classify_name(key, database)
+        prefixed = f"{label}: {detail}"
+        if bucket == "essential":
+            essential_details.append(prefixed)
+        elif bucket == "non_essential":
+            non_essential_details.append(prefixed)
+        else:
+            unknown_details.append(prefixed)
 
 
 def classify_cookies(
@@ -32,48 +90,76 @@ def classify_cookies(
 ) -> Tuple[Status, str]:
     """
     RDS-CUC-371/372:
-    - RDS-CUC-371 identifies non-essential cookies via the bundled cookie database.
-    - RDS-CUC-372 maps Functional/Security categories to essential cookies and
-      Analytics/Marketing categories to non-essential cookies.
-    - Unknown cookies remain MANUELL because essentiality cannot be asserted.
+    - RDS-CUC-371 identifies non-essential cookies and browser storage.
+    - RDS-CUC-372 maps Functional/Security categories and storage allowlist
+      prefixes to essential storage; Analytics/Marketing or tracking-like names
+      are non-essential.
+    - Unknown cookies/storage keys remain MANUELL because essentiality cannot be asserted.
     """
     cookies: List[Dict[str, Any]] = data.get('cookies', [])
     database = cookie_database or get_default_cookie_database()
-    essential_details = []
-    non_essential_details = []
-    unknown_details = []
+    essential_details: list[str] = []
+    non_essential_details: list[str] = []
+    unknown_details: list[str] = []
 
     for c in cookies:
         name = str(c.get('name') or '').strip()
         if not name:
             continue
-
-        db_result = database.is_cookie_essential(name)
-        if db_result is None:
-            fallback_hit = next(
-                (prefix for prefix in TRACKER_COOKIE_PREFIXES if name.lower().startswith(prefix.lower())),
-                None,
-            )
-            if fallback_hit is not None:
-                non_essential_details.append(f"{name} (Heuristik: Tracker-Präfix {fallback_hit})")
-            else:
-                unknown_details.append(name)
-            continue
-
-        is_essential, cookie_info = db_result
-        detail = f"{name} ({cookie_info.platform}, {cookie_info.category})"
-        if is_essential:
+        bucket, detail = _classify_name(name, database)
+        if bucket == "essential":
             essential_details.append(detail)
-        else:
+        elif bucket == "non_essential":
             non_essential_details.append(detail)
+        else:
+            unknown_details.append(detail)
 
-    note_parts = ["RDS-CUC-371/372 cookie_db.json"]
-    if non_essential_details:
-        note_parts.append("Nicht essenzielle Cookies: " + ", ".join(sorted(set(non_essential_details))))
-    if essential_details:
-        note_parts.append("Essenzielle Cookies: " + ", ".join(sorted(set(essential_details))))
-    if unknown_details:
-        note_parts.append("Unbekannte Cookies: " + ", ".join(sorted(set(unknown_details))))
+    _append_storage_classification(
+        values=data.get('local_storage') or {},
+        label='LocalStorage',
+        database=database,
+        essential_details=essential_details,
+        non_essential_details=non_essential_details,
+        unknown_details=unknown_details,
+    )
+    _append_storage_classification(
+        values=data.get('session_storage') or {},
+        label='SessionStorage',
+        database=database,
+        essential_details=essential_details,
+        non_essential_details=non_essential_details,
+        unknown_details=unknown_details,
+    )
+
+    note_parts = ["RDS-CUC-371/372 cookie_db.json + Storage-Allowlist"]
+    non_essential_cookies = [d for d in non_essential_details if not d.startswith(('LocalStorage:', 'SessionStorage:'))]
+    non_essential_local = [d.removeprefix('LocalStorage: ') for d in non_essential_details if d.startswith('LocalStorage:')]
+    non_essential_session = [d.removeprefix('SessionStorage: ') for d in non_essential_details if d.startswith('SessionStorage:')]
+    essential_cookies = [d for d in essential_details if not d.startswith(('LocalStorage:', 'SessionStorage:'))]
+    essential_local = [d.removeprefix('LocalStorage: ') for d in essential_details if d.startswith('LocalStorage:')]
+    essential_session = [d.removeprefix('SessionStorage: ') for d in essential_details if d.startswith('SessionStorage:')]
+    unknown_cookies = [d for d in unknown_details if not d.startswith(('LocalStorage:', 'SessionStorage:'))]
+    unknown_local = [d.removeprefix('LocalStorage: ') for d in unknown_details if d.startswith('LocalStorage:')]
+    unknown_session = [d.removeprefix('SessionStorage: ') for d in unknown_details if d.startswith('SessionStorage:')]
+
+    if non_essential_cookies:
+        note_parts.append("Nicht essenzielle Cookies: " + ", ".join(sorted(set(non_essential_cookies))))
+    if non_essential_local:
+        note_parts.append("Nicht essenzieller LocalStorage: " + ", ".join(sorted(set(non_essential_local))))
+    if non_essential_session:
+        note_parts.append("Nicht essenzieller SessionStorage: " + ", ".join(sorted(set(non_essential_session))))
+    if essential_cookies:
+        note_parts.append("Essenzielle Cookies: " + ", ".join(sorted(set(essential_cookies))))
+    if essential_local:
+        note_parts.append("Erlaubter LocalStorage: " + ", ".join(sorted(set(essential_local))))
+    if essential_session:
+        note_parts.append("Erlaubter SessionStorage: " + ", ".join(sorted(set(essential_session))))
+    if unknown_cookies:
+        note_parts.append("Unbekannte Cookies: " + ", ".join(sorted(set(unknown_cookies))))
+    if unknown_local:
+        note_parts.append("Unbekannter LocalStorage: " + ", ".join(sorted(set(unknown_local))))
+    if unknown_session:
+        note_parts.append("Unbekannter SessionStorage: " + ", ".join(sorted(set(unknown_session))))
 
     note = "; ".join(note_parts)
     if non_essential_details:
@@ -83,8 +169,8 @@ def classify_cookies(
     if unknown_details:
         return 'MANUELL', note
     if essential_details:
-        return 'PASS', "Alle erkannten Cookies sind laut cookie_db.json essenziell; " + note
-    return 'MANUELL', 'Keine Cookies zur Bewertung nach RDS-CUC-371/372 erkannt'
+        return 'PASS', "Alle erkannten Cookies/Speicher-Einträge sind laut cookie_db.json/Allowlist essenziell; " + note
+    return 'MANUELL', 'Keine Cookies oder Browser-Storage-Einträge zur Bewertung nach RDS-CUC-371/372 erkannt'
 
 
 def classify_tracking_pixel(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
@@ -112,23 +198,41 @@ def classify_tracking_pixel(data: Dict[str, Any], audience: str) -> Tuple[Status
 def classify_local_storage(data: Dict[str, Any], audience: str) -> Tuple[Status, str]:
     """
     RDS-CUC-374:
-    - If localStorage/sessionStorage contain known tracker keys → FAIL (SuS), MANUELL otherwise
-    - Else MANUELL (cannot decide essentiality)
+    - localStorage/sessionStorage entries are evaluated against the same
+      cookie database and storage allowlist used by RDS-CUC-371/372.
     """
-    ls: Dict[str, str] = data.get('local_storage', {})
-    ss: Dict[str, str] = data.get('session_storage', {})
-    keys = list(ls.keys()) + list(ss.keys())
-    hits = []
-    for k in keys:
-        for needle in STORAGE_TRACKER_KEYS:
-            if needle in k.lower():
-                hits.append(k)
-                break
-    if hits:
+    database = get_default_cookie_database()
+    essential_details: list[str] = []
+    non_essential_details: list[str] = []
+    unknown_details: list[str] = []
+    _append_storage_classification(
+        values=data.get('local_storage') or {},
+        label='LocalStorage',
+        database=database,
+        essential_details=essential_details,
+        non_essential_details=non_essential_details,
+        unknown_details=unknown_details,
+    )
+    _append_storage_classification(
+        values=data.get('session_storage') or {},
+        label='SessionStorage',
+        database=database,
+        essential_details=essential_details,
+        non_essential_details=non_essential_details,
+        unknown_details=unknown_details,
+    )
+    if non_essential_details:
+        keys = ", ".join(sorted({item.split(': ', 1)[-1] for item in non_essential_details}))
         if _is_sus_audience(audience):
-            return 'FAIL', f"Tracker-Storage: {', '.join(sorted(set(hits)))}"
-        return 'MANUELL', f"Storage erfordert Einwilligung?: {', '.join(sorted(set(hits)))}"
-    return 'MANUELL', 'Keine bekannten Tracker-Storage-Schlüssel erkannt'
+            return 'FAIL', f"Nicht essenzieller Browser-Storage: {keys}"
+        return 'MANUELL', f"Browser-Storage erfordert Einwilligung?: {keys}"
+    if unknown_details:
+        keys = ", ".join(sorted({item.split(': ', 1)[-1] for item in unknown_details}))
+        return 'MANUELL', f"Unbekannter Browser-Storage: {keys}"
+    if essential_details:
+        keys = ", ".join(sorted({item.split(': ', 1)[-1] for item in essential_details}))
+        return 'PASS', f"Alle erkannten Browser-Storage-Schlüssel sind laut cookie_db.json/Allowlist essenziell: {keys}"
+    return 'MANUELL', 'Keine LocalStorage-/SessionStorage-Schlüssel erkannt'
 
 
 def _signal_api_names(data: Dict[str, Any], group: str) -> list[str]:

@@ -177,3 +177,31 @@ def test_generate_pdf_embeds_public_screenshot_and_shortens_noisy_evidence(tmp_p
     data = output.read_bytes()
     assert output.stat().st_size > 1000
     assert b"/Image" in data
+
+
+
+def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[
+            CheckFinding(
+                criterion="RDS-CUC-371",
+                status="FAIL",
+                note="Nicht essenzielle Speicher: _ga, matomo.id, IDE",
+            )
+        ],
+    )
+    raw_capture = {
+        "cookies": [{"name": "_ga"}, {"name": "CookieConsent"}],
+        "local_storage": {"matomo.id": "secret", "CookieConsentBulkSetting-abc": "1"},
+        "session_storage": {"IDE": "secret", "csrf_token": "secret"},
+    }
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture=raw_capture)
+
+    text = output.read_text(encoding="utf-8")
+    assert "| Cookie-Namen | CookieConsent, _ga |" in text
+    assert "| LocalStorage-Schlüssel | CookieConsentBulkSetting-abc, matomo.id |" in text
+    assert "| SessionStorage-Schlüssel | IDE, csrf_token |" in text
+    assert "secret" not in text

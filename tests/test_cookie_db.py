@@ -122,7 +122,7 @@ def test_classify_cookies_passes_when_database_confirms_all_cookies_essential(tm
     )
 
     assert status == "PASS"
-    assert "Alle erkannten Cookies sind laut cookie_db.json essenziell" in note
+    assert "Alle erkannten Cookies/Speicher-Einträge sind laut cookie_db.json/Allowlist essenziell" in note
     assert "RDS-CUC-371/372" in note
 
 
@@ -140,3 +140,53 @@ def test_classify_cookies_keeps_manual_status_for_unknown_cookies(tmp_path: Path
     assert status == "MANUELL"
     assert "Unbekannte Cookies" in note
     assert "unknown_cookie" in note
+
+
+
+def test_classify_cookies_evaluates_cookies_local_and_session_storage_together(tmp_path: Path) -> None:
+    db_path = tmp_path / "cookie_db.json"
+    _write_cookie_db(db_path)
+    database = CookieDatabase(db_path)
+
+    status, note = classify_cookies(
+        {
+            "cookies": [{"name": "CookieConsent"}, {"name": "_ga_ABC123"}],
+            "local_storage": {"CookieConsentBulkSetting-abc": "1", "matomo.id": "visitor"},
+            "session_storage": {"csrf_token": "redacted", "IDE": "ad"},
+        },
+        "sus",
+        cookie_database=database,
+    )
+
+    assert status == "FAIL"
+    assert "Nicht essenzielle Cookies" in note
+    assert "_ga_ABC123" in note
+    assert "Nicht essenzieller LocalStorage" in note
+    assert "matomo.id" in note
+    assert "Nicht essenzieller SessionStorage" in note
+    assert "IDE" in note
+    assert "Erlaubter LocalStorage" in note
+    assert "CookieConsentBulkSetting-abc" in note
+    assert "Erlaubter SessionStorage" in note
+    assert "csrf_token" in note
+    assert "visitor" not in note
+    assert "redacted" not in note
+
+
+def test_classify_cookies_reports_unknown_storage_keys_for_manual_review(tmp_path: Path) -> None:
+    db_path = tmp_path / "cookie_db.json"
+    _write_cookie_db(db_path)
+    database = CookieDatabase(db_path)
+
+    status, note = classify_cookies(
+        {"cookies": [], "local_storage": {"unknownLocal": "secret"}, "session_storage": {"unknownSession": "secret"}},
+        "sus",
+        cookie_database=database,
+    )
+
+    assert status == "MANUELL"
+    assert "Unbekannter LocalStorage" in note
+    assert "unknownLocal" in note
+    assert "Unbekannter SessionStorage" in note
+    assert "unknownSession" in note
+    assert "secret" not in note

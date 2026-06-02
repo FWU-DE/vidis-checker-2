@@ -112,10 +112,14 @@ def _evidence_for_finding(
 
     if finding.criterion in {"RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-453"}:
         cookies = raw_capture.get("cookies") or []
+        local_storage = raw_capture.get("local_storage") or {}
+        session_storage = raw_capture.get("session_storage") or {}
         evidence.append(EvidenceItem("Anzahl Cookies", str(len(cookies))))
         if cookies:
             names = sorted({str(c.get("name", "")) for c in cookies if c.get("name")})
             evidence.append(EvidenceItem("Cookie-Namen", ", ".join(names[:20]) or "—"))
+        evidence.append(EvidenceItem("LocalStorage-Schlüssel", ", ".join(sorted(local_storage.keys())) or "—"))
+        evidence.append(EvidenceItem("SessionStorage-Schlüssel", ", ".join(sorted(session_storage.keys())) or "—"))
     if finding.criterion == "RDS-CUC-373":
         requests = raw_capture.get("requests") or []
         scripts = raw_capture.get("scripts") or []
