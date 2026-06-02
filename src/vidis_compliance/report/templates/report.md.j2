@@ -30,6 +30,18 @@ Diese Übersicht fasst Cookies, `localStorage` und `sessionStorage` für die bet
 {% endfor %}
 
 {% endif -%}
+{% if document.code_review_evidence -%}
+## Code-Durchsicht für Anbieter
+
+Diese Code-Durchsicht unterstützt Anbieter bei der Selbstprüfung ihres Quellcodes auf VIDIS-relevante technische Signale. Sie ist kein Audit, keine Zertifizierung und keine vollständige Security- oder Datenschutzprüfung.
+
+| Nachweis | Wert |
+| --- | --- |
+{% for item in document.code_review_evidence -%}
+| {{ item.label | table_escape }} | {{ item.value | table_escape }} |
+{% endfor %}
+
+{% endif -%}
 ## Kriterienbewertung
 
 {% for report in document.criteria_reports -%}

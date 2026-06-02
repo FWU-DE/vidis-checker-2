@@ -234,11 +234,21 @@ uv run pytest -q</code></pre>
   --output example-site \
   --md results/example-site/report.md \
   --pdf results/example-site/report.pdf</code></pre>
-      <h3>Quellcode prüfen</h3>
+      <h3>Quellcode-Durchsicht für Anbieter</h3>
       <pre><code>uv run vidis check \
   --code-path /path/to/vendor/repo \
   --output vendor-code \
-  --md results/vendor-code/report.md</code></pre>
+  --md results/vendor-code/report.md \
+  --pdf results/vendor-code/report.pdf</code></pre>
+      <p><code>--code-path</code> führt eine unterstützende Code-Durchsicht in demselben <code>vidis check</code>-Aufruf aus. Sie ist als Hilfe zur Selbstprüfung für Anbieter gedacht: Das Tool sucht VIDIS-relevante Quellcode-Signale wie Cookie-Schreibzugriffe, Browser-Storage, Tracking-/Analytics-Bibliotheken, Fingerprinting-APIs, externe Script-Quellen sowie Impressum-/Datenschutz-Links. Das ist ausdrücklich kein Audit, keine Zertifizierung und keine vollständige Security- oder Datenschutzprüfung.</p>
+      <h3>Website und Quellcode gemeinsam prüfen</h3>
+      <pre><code>uv run vidis check \
+  --url https://example.com \
+  --code-path /path/to/vendor/repo \
+  --output vendor-combined \
+  --md results/vendor-combined/report.md \
+  --pdf results/vendor-combined/report.pdf</code></pre>
+      <p>Bei kombinierten Läufen landen Website-, Browser- und Code-Signale in einem Bericht. Der Report enthält dann einen eigenen Abschnitt <em>Code-Durchsicht für Anbieter</em> mit Anzahl gescannter Dateien, Signalkategorien, auffälligen Beispielen und nächsten Schritten; betroffene Kriterien verweisen zusätzlich auf diesen Abschnitt.</p>
       <h3>Dokumente und URLs einbeziehen</h3>
       <pre><code>uv run vidis check \
   --url https://example.com \
@@ -253,7 +263,7 @@ uv run pytest -q</code></pre>
         <thead><tr><th>Option</th><th>Bedeutung</th></tr></thead>
         <tbody>
           <tr><td><code>--url</code></td><td>Start-URL für Browser-/Website-Prüfung.</td></tr>
-          <tr><td><code>--code-path</code></td><td>Lokales Repository oder Source-Verzeichnis für statische Checks.</td></tr>
+          <tr><td><code>--code-path</code></td><td>Lokales Repository oder Source-Verzeichnis für die unterstützende Code-Durchsicht. Die Ergebnisse werden als <code>code_capture.json</code> gespeichert und bei Markdown/PDF in einem eigenen Abschnitt <em>Code-Durchsicht für Anbieter</em> zusammengefasst.</td></tr>
           <tr><td><code>--pages</code></td><td>Maximale Anzahl eindeutig gecrawlter Seiten, default <code>8</code>. URL-Varianten derselben Seite wie <code>/</code>, <code>/index.html</code>, Fragmente und Tracking-Parameter werden für Crawl und Screenshots dedupliziert.</td></tr>
           <tr><td><code>--audience</code></td><td>Zielgruppe: <code>SuS</code>, <code>Lehrkraefte</code> oder <code>beide</code>.</td></tr>
           <tr><td><code>--output</code></td><td>Job-ID/Ordnername unter <code>results/</code>.</td></tr>
@@ -312,7 +322,7 @@ uv run vidis check \
   --md results/example-full/report.md \
   --pdf results/example-full/report.pdf</code></pre>
       <p><code>--input</code> akzeptiert entweder eine Job-ID unter <code>results/</code> oder einen direkten Pfad zu <code>result.json</code>.</p>
-      <p>Markdown- und PDF-Reports listen immer alle VIDIS-Prüfkriterien. Kriterien, die im konkreten Lauf nicht automatisiert getestet wurden oder semantisch nicht belastbar automatisierbar sind, erscheinen als <code>MANUELL</code> mit dem vollständigen Kriteriumskontext: Code, Name, Bereich, Verbindlichkeit und Anforderungstext. Jedes Kriterium enthält zusätzlich eine anfängerfreundliche Einordnung mit <em>Was bedeutet das?</em>, <em>Warum ist das relevant?</em> und <em>Nächste Schritte</em>. Dadurch erklären unvollständige Bewertungen, etwa beim Impressum, konkret welche Angaben fehlen, warum sie wichtig sind und was als Nächstes mit Anbieter, Technik oder Datenschutzstelle geklärt werden sollte. Automatisch bewertete <code>PASS</code>/<code>FAIL</code>-Kriterien zeigen Bewertung, Einordnung und Nachweise. Cookies, <code>localStorage</code> und <code>sessionStorage</code> werden einmal in einer gemeinsamen Cookie- und Browser-Storage-Bewertung vor der Kriterienliste zusammengefasst; die einzelnen CUC-Kriterien verweisen darauf, statt dieselben Speicherzeilen mehrfach zu wiederholen. Bei Impressum, Datenschutzerklärung, AGB/AVV, Werbung, Jugendmedienschutz und vergleichbaren inhaltlichen Bewertungen enthält der Report einen Hinweis, dass es sich nur um eine KI-gestützte erste Einschätzung handelt und keine rechtliche oder datenschutzfachliche Prüfung ersetzt.</p>
+      <p>Markdown- und PDF-Reports listen immer alle VIDIS-Prüfkriterien. Kriterien, die im konkreten Lauf nicht automatisiert getestet wurden oder semantisch nicht belastbar automatisierbar sind, erscheinen als <code>MANUELL</code> mit dem vollständigen Kriteriumskontext: Code, Name, Bereich, Verbindlichkeit und Anforderungstext. Jedes Kriterium enthält zusätzlich eine anfängerfreundliche Einordnung mit <em>Was bedeutet das?</em>, <em>Warum ist das relevant?</em> und <em>Nächste Schritte</em>. Dadurch erklären unvollständige Bewertungen, etwa beim Impressum, konkret welche Angaben fehlen, warum sie wichtig sind und was als Nächstes mit Anbieter, Technik oder Datenschutzstelle geklärt werden sollte. Automatisch bewertete <code>PASS</code>/<code>FAIL</code>-Kriterien zeigen Bewertung, Einordnung und Nachweise. Cookies, <code>localStorage</code> und <code>sessionStorage</code> werden einmal in einer gemeinsamen Cookie- und Browser-Storage-Bewertung vor der Kriterienliste zusammengefasst; die einzelnen CUC-Kriterien verweisen darauf, statt dieselben Speicherzeilen mehrfach zu wiederholen. Wenn <code>--code-path</code> genutzt wurde, erscheint zusätzlich der Abschnitt <em>Code-Durchsicht für Anbieter</em>. Er fasst gescannte Dateien, Quellcode-Signale, auffällige Beispiele und nächste Schritte zusammen und stellt klar, dass diese Durchsicht nur die Selbstprüfung unterstützt und kein Audit, keine Zertifizierung sowie keine vollständige Security- oder Datenschutzprüfung ist. Bei Impressum, Datenschutzerklärung, AGB/AVV, Werbung, Jugendmedienschutz und vergleichbaren inhaltlichen Bewertungen enthält der Report einen Hinweis, dass es sich nur um eine KI-gestützte erste Einschätzung handelt und keine rechtliche oder datenschutzfachliche Prüfung ersetzt.</p>
       <p>PDF-Reports enthalten eine KPI-Zusammenfassung, gekürzte Nachweise, Statusfarben, die Coverage Matrix und einen Screenshot-Anhang für öffentliche Website-Screenshots. Website-Screenshots werden mit einem breiten Browser-Viewport von ca. <code>1900×2100 px</code> erfasst und im PDF seitenbreit skaliert, damit Text gut lesbar bleibt und jeweils ein Screenshot auf eine A4-Seite passt. Authentifizierte oder <code>local_only</code>-Screenshots bleiben lokale Artefakte und werden nur referenziert. Falls <code>--lighthouse</code> oder <code>--webinspector-export</code> genutzt wurde, verlinken Markdown- und PDF-Reports zusätzlich die erzeugten JSON-/HTML-Artefakte.</p>
     </section>
 

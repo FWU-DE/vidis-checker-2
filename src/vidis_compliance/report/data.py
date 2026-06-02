@@ -80,6 +80,33 @@ class ReportDocument:
             evidence.append(EvidenceItem("Fehlende Beschreibungen", ", ".join(cuc_453["missing"])))
         return evidence
 
+    @property
+    def code_review_evidence(self) -> list[EvidenceItem]:
+        if not self.raw_capture:
+            return []
+        code_review = self.raw_capture.get("code_review") or self.raw_capture.get("code_capture") or {}
+        if not isinstance(code_review, dict) or not code_review:
+            return []
+        signals = code_review.get("signals") or {}
+        if not isinstance(signals, dict):
+            signals = {}
+        evidence = [
+            EvidenceItem("Hinweis", "Diese Code-Durchsicht unterstützt Anbieter bei der Selbstprüfung. Sie ist kein Audit, keine Zertifizierung und keine vollständige Security- oder Datenschutzprüfung."),
+            EvidenceItem("Geprüfter Code", str(code_review.get("root_label") or "übergebener Quellcode")),
+            EvidenceItem("Gescannte Dateien", str(code_review.get("files_scanned") or 0)),
+            EvidenceItem("Tracking-/Analytics-Signale", str(_signal_count(signals, "tracking"))),
+            EvidenceItem("Cookie-Schreibzugriffe", str(_signal_count(signals, "cookies"))),
+            EvidenceItem("Browser-Storage-Signale", str(_signal_count(signals, "storage") + _signal_count(signals, "device_storage"))),
+            EvidenceItem("Fingerprinting-Signale", str(_signal_count(signals, "fingerprinting"))),
+            EvidenceItem("Externe Script-Quellen", str(_signal_count(signals, "external_scripts"))),
+            EvidenceItem("Impressum-/Datenschutz-Hinweise", f"Impressum: {_signal_count(signals, 'impressum_links')}; Datenschutz: {_signal_count(signals, 'privacy_links')}"),
+        ]
+        examples = _code_review_examples(signals)
+        if examples:
+            evidence.append(EvidenceItem("Auffällige Beispiele", "; ".join(examples)))
+        evidence.append(EvidenceItem("Nächste Schritte", "Auffällige Stellen im Quellcode prüfen, Zweck/Notwendigkeit dokumentieren und bei Tracking, Fingerprinting oder externer Einbindung die Datenschutzstelle bzw. technische Verantwortliche einbeziehen."))
+        return evidence
+
 
 def load_criteria(path: Path = CRITERIA_PATH) -> CriteriaIndex:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -153,6 +180,29 @@ def _normalize_report_finding(finding: CheckFinding) -> CheckFinding:
             note="Dieses Prüfkriterium wurde im Lauf nicht automatisiert getestet.",
         )
     return finding
+
+
+def _signal_count(signals: dict[str, Any], key: str) -> int:
+    value = signals.get(key) or []
+    return len(value) if isinstance(value, list) else 0
+
+
+def _code_review_examples(signals: dict[str, Any], limit: int = 5) -> list[str]:
+    examples: list[str] = []
+    for key in ("tracking", "fingerprinting", "cookies", "storage", "device_storage", "external_scripts"):
+        entries = signals.get(key) or []
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            file = str(entry.get("file") or "?")
+            line = entry.get("line") or "?"
+            value = " ".join(str(entry.get("value") or "").split())
+            examples.append(f"{key}: {file}:{line} {value}".strip())
+            if len(examples) >= limit:
+                return examples
+    return examples
 
 
 def _is_semantic_evaluation(code: str) -> bool:
@@ -307,6 +357,8 @@ def _evidence_for_finding(
 
     if finding.criterion in {"RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-453"}:
         evidence.append(EvidenceItem("Gemeinsamer Abschnitt", "Cookie- und Browser-Storage-Bewertung siehe Zusammenfassung vor der Kriterienbewertung."))
+        if finding.criterion in {"RDS-CUC-371", "RDS-CUC-372"}:
+            _append_code_review_reference(evidence, raw_capture, "cookies")
         if finding.criterion == "RDS-CUC-453":
             cuc_453 = raw_capture.get("rds_cuc_453") or {}
             if cuc_453.get("missing"):
@@ -316,16 +368,20 @@ def _evidence_for_finding(
         scripts = raw_capture.get("scripts") or []
         evidence.append(EvidenceItem("Netzwerkanfragen", str(len(requests))))
         evidence.append(EvidenceItem("Skriptquellen", str(len(scripts))))
+        _append_code_review_reference(evidence, raw_capture, "tracking")
     if finding.criterion == "RDS-CUC-374":
         evidence.append(EvidenceItem("Gemeinsamer Abschnitt", "Cookie- und Browser-Storage-Bewertung siehe Zusammenfassung vor der Kriterienbewertung."))
+        _append_code_review_reference(evidence, raw_capture, "storage")
     if finding.criterion in {"RDS-CUC-375", "RDS-CUC-376", "RDS-CUC-377"}:
         browser_signals = raw_capture.get("browser_signals") or {}
         device_storage = browser_signals.get("device_storage") or []
         fingerprinting = browser_signals.get("fingerprinting") or []
         if finding.criterion == "RDS-CUC-375":
             evidence.append(EvidenceItem("Device-/Browser-Storage-APIs", _api_signal_summary(device_storage)))
+            _append_code_review_reference(evidence, raw_capture, "device_storage")
         if finding.criterion in {"RDS-CUC-376", "RDS-CUC-377"}:
             evidence.append(EvidenceItem("Fingerprinting-/Entropy-APIs", _api_signal_summary(fingerprinting)))
+            _append_code_review_reference(evidence, raw_capture, "fingerprinting")
         if finding.criterion == "RDS-CUC-377":
             requests = raw_capture.get("requests") or []
             scripts = raw_capture.get("scripts") or []
@@ -360,6 +416,8 @@ def _evidence_for_finding(
         if ipf.get("privacy_url"):
             evidence.append(EvidenceItem("Datenschutzerklärung-URL", str(ipf["privacy_url"])))
         _append_dso_383_evidence(evidence, ipf)
+    if finding.criterion == "RDS-CDN-379":
+        _append_code_review_reference(evidence, raw_capture, "external_scripts")
     _append_external_audit_evidence(evidence, raw_capture)
     _append_screenshot_evidence(evidence, raw_capture, finding.criterion)
     return evidence
@@ -375,6 +433,16 @@ def _append_ipf_evidence(evidence: list[EvidenceItem], ipf: dict[str, Any], key:
         evidence.append(EvidenceItem(f"{label}: fehlend", "; ".join(str(item) for item in missing)))
     if manual:
         evidence.append(EvidenceItem(f"{label}: manuell zu prüfen", "; ".join(str(item) for item in manual)))
+
+
+def _append_code_review_reference(evidence: list[EvidenceItem], raw_capture: dict[str, Any], signal_key: str) -> None:
+    code_review = raw_capture.get("code_review") or raw_capture.get("code_capture") or {}
+    signals = code_review.get("signals") if isinstance(code_review, dict) else None
+    if not isinstance(signals, dict) or _signal_count(signals, signal_key) == 0:
+        return
+    examples = _code_review_examples({signal_key: signals.get(signal_key) or []}, limit=3)
+    suffix = f" Beispiele: {'; '.join(examples)}" if examples else ""
+    evidence.append(EvidenceItem("Code-Durchsicht", f"Quellcode-Signale siehe Abschnitt \"Code-Durchsicht für Anbieter\".{suffix}"))
 
 
 def _append_dso_383_evidence(evidence: list[EvidenceItem], ipf: dict[str, Any]) -> None:

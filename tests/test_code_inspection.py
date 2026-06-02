@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -173,25 +172,39 @@ def test_rds_cuc_375_unresolved_generic_api_is_manual_with_full_criterion_text(t
     assert "Zu klären" in finding.note
 
 
-def test_cli_check_code_path_outputs_non_placeholder_findings(tmp_path: Path, monkeypatch) -> None:
+def test_cli_check_code_path_outputs_provider_code_review_report_section(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "fixture-app"
     _write_frontend_fixture(project)
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(
         app,
-        ["check", "--code-path", str(project), "--output", "codejob", "--audience", "SuS"],
+        [
+            "check",
+            "--code-path",
+            str(project),
+            "--output",
+            "codejob-report",
+            "--audience",
+            "SuS",
+            "--md",
+            "results/codejob-report/report.md",
+            "--pdf",
+            "results/codejob-report/report.pdf",
+        ],
     )
 
     assert result.exit_code == 0, result.output
-    output_path = tmp_path / "results" / "codejob" / "result.json"
-    payload = json.loads(output_path.read_text(encoding="utf-8"))
-    by_code = {finding["criterion"]: finding for finding in payload["findings"]}
-    assert by_code["RDS-IPF-364"]["status"] == "PASS"
-    assert by_code["RDS-IPF-365"]["status"] == "PASS"
-    assert by_code["RDS-CUC-373"]["status"] == "FAIL"
-    assert by_code["RDS-CUC-373"]["note"] != "Not yet implemented"
-    assert by_code["RDS-CUC-374"]["status"] == "FAIL"
-    assert by_code["RDS-CDN-379"]["status"] == "MANUELL"
-    capture_path = tmp_path / "results" / "codejob" / "code_capture.json"
-    assert capture_path.exists()
+    result_path = tmp_path / "results" / "codejob-report" / "result.json"
+    code_capture_path = tmp_path / "results" / "codejob-report" / "code_capture.json"
+    report_md = tmp_path / "results" / "codejob-report" / "report.md"
+    report_pdf = tmp_path / "results" / "codejob-report" / "report.pdf"
+    assert result_path.exists()
+    assert code_capture_path.exists()
+    text = report_md.read_text(encoding="utf-8")
+    assert "## Code-Durchsicht für Anbieter" in text
+    assert "kein Audit" in text
+    assert "keine Zertifizierung" in text
+    assert "| Gescannte Dateien | 1 |" in text
+    assert "googletagmanager.com" in text
+    assert report_pdf.stat().st_size > 1000
