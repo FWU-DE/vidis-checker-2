@@ -120,7 +120,7 @@ _AUTOMATED_BY_DOCUMENTS = {
 }
 _MANUAL_OVERLAY = {
     "RDS-CUC-453": "Datenschutzerklärung muss weiterhin gegen reale Cookies/Consent-Texte abgeglichen werden.",
-    "RDS-CUC-375": "Device-storage signals können nur Indizien liefern; Zweckbindung bleibt reviewpflichtig.",
+    "RDS-CUC-375": "IndexedDB/Cache/ServiceWorker-Zugriffe werden technisch gesammelt; legal-purpose decision manual bleibt bei ungeklärten Device-Storage-Signalen erforderlich.",
     "RDS-CUC-376": "Fingerprinting-Signale sind technisch erkennbar, Rechts-/Zweckbewertung bleibt reviewpflichtig.",
     "RDS-CUC-377": "Nicht-pädagogischer Zweck ist nur mit Produktkontext sicher bewertbar.",
 }
@@ -304,6 +304,8 @@ def _input_needed(code: str, sources: set[str]) -> str:
 def _automation_level(code: str, sources: set[str]) -> str:
     if not sources:
         return "manual"
+    if code == "RDS-CUC-375":
+        return "automated signal collection plus legal-purpose decision manual"
     if code in _MANUAL_OVERLAY:
         return "automated signal collection plus manual decision"
     return "fully automated signal/check result for supplied inputs"

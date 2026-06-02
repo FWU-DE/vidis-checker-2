@@ -265,6 +265,7 @@ uv run pytest -q</code></pre>
         </tbody>
       </table>
       <p>Für <code>RDS-CUC-371</code>/<code>RDS-CUC-372</code> bewertet der Website-Check Cookies, <code>localStorage</code> und <code>sessionStorage</code> gemeinsam. Namen werden gegen die gebündelte Cookie-Datenbank sowie erlaubte funktionale/security-nahe Speicher-Präfixe geprüft; Reports listen die gefundenen Cookie- und Storage-Schlüssel ohne Storage-Werte auf.</p>
+      <p>Für <code>RDS-CUC-375</code> sammelt der Browser- und Code-Check Zugriffe auf IndexedDB, Cache Storage und Service-Worker-Storage. Bekannte Tracker-/Device-Identifier-Signale werden für Schülerinnen und Schüler als <code>FAIL</code> markiert, eindeutig technische Speicherzwecke wie Session-, CSRF- oder Offline-App-Shell-Hinweise als <code>PASS</code>; generische API-Nutzung bleibt <code>MANUELL</code> und enthält im Report den vollständigen Kriteriumstext, beobachtete APIs/URLs und die offenen Prüffragen zu Zweck, Zielgruppe und Einwilligung. Storage-Werte werden nicht in Reports ausgegeben.</p>
       <h3>Beispielansichten</h3>
       <div class="grid">
         <figure class="card">
