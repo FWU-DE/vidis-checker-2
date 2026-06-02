@@ -7,7 +7,7 @@ Du führst jetzt eine vollständige VIDIS Prüfkriterien-Prüfung (V0.2) durch.
 
 [Auszug; vollständige SKILL siehe Quelle]
 
-VIDIS Prüfkriterien V0.2 — Compliance Report
+VIDIS Prüfkriterien V0.2 — Automatisierter Vorab-Check
 Zielgruppe: [SuS / Lehrkräfte / beide]
 Datum: [heute]
 

@@ -34,7 +34,7 @@ class ReportDocument:
     criteria_reports: list[CriterionReport]
     raw_capture: dict[str, Any] | None
     generated_at: str
-    title: str = "VIDIS Prüfkriterien V0.2 — Compliance Report"
+    title: str = "VIDIS Prüfkriterien V0.2 — Automatisierter Vorab-Check"
 
 
 def load_criteria(path: Path = CRITERIA_PATH) -> CriteriaIndex:

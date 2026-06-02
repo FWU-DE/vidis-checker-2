@@ -26,7 +26,7 @@ def test_generate_markdown_includes_criterion_text_evidence_and_raw_capture(tmp_
     generate_markdown(result, output, raw_capture=raw_capture)
 
     text = output.read_text(encoding="utf-8")
-    assert "# VIDIS Prüfkriterien V0.2" in text
+    assert "# VIDIS Prüfkriterien V0.2 — Automatisierter Vorab-Check" in text
     assert "### RDS-CUC-371: Nicht essenzielle Cookies" in text
     assert "Das MUSS-Kriterium" in text
     assert "| Anzahl Cookies | 1 |" in text
