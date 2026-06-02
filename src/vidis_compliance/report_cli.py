@@ -5,6 +5,11 @@ from pathlib import Path
 
 import typer
 
+from .coverage_matrix import (
+    DEFAULT_COVERAGE_HTML,
+    DEFAULT_COVERAGE_JSON,
+    write_coverage_matrix,
+)
 from .models import JobResult
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
@@ -61,6 +66,17 @@ def report(
         generate_markdown(res, out, raw_capture=raw_capture)
         written.append(out)
 
+    for path in written:
+        typer.echo(str(path))
+
+
+@app.command()
+def coverage(
+    output_json: Path = typer.Option(DEFAULT_COVERAGE_JSON, "--json", help="Pfad für die maschinenlesbare Coverage-Matrix."),
+    output_html: Path = typer.Option(DEFAULT_COVERAGE_HTML, "--html", help="Pfad für die statische HTML-Coverage-Matrix."),
+):
+    """Generate old-vs-new VIDIS migration coverage matrix."""
+    written = write_coverage_matrix(json_path=output_json, html_path=output_html)
     for path in written:
         typer.echo(str(path))
 

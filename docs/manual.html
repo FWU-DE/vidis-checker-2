@@ -205,6 +205,7 @@
       <a href="#setup">Setup</a>
       <a href="#cli">CLI</a>
       <a href="#reports">Reports</a>
+      <a href="#coverage">Coverage Matrix</a>
       <a href="#api">FastAPI</a>
       <a href="#outputs">Outputs</a>
       <a href="#troubleshooting">Troubleshooting</a>
@@ -273,8 +274,18 @@ uv run pytest -q</code></pre>
       <p><code>--input</code> akzeptiert entweder eine Job-ID unter <code>results/</code> oder einen direkten Pfad zu <code>result.json</code>.</p>
     </section>
 
+    <section id="coverage">
+      <h2>4. Migration Coverage Matrix</h2>
+      <p>Die statische Matrix zeigt für jedes aktive VIDIS-Kriterium und jede Legacy-Feature-Area, ob der alte Checker ersetzt, erweitert, nur teilweise migriert oder bewusst noch manuell ist.</p>
+      <pre><code>uv run vidis-report coverage \
+  --json docs/results/coverage_matrix.json \
+  --html docs/results/coverage_matrix.html</code></pre>
+      <p>Öffnen: <a href="results/coverage_matrix.html">docs/results/coverage_matrix.html</a>. Die JSON-Datei daneben ist maschinenlesbar und enthält dieselben Spalten: old checker status, new platform status, input needed, automation level, evidence artifacts, CLI/API availability und known limitations.</p>
+      <p class="note">Explizite Gap-Zeilen dokumentieren Agent-Login/Personas, Screenshot/Vision, API-Auth/Jobliste/ZIP, FastAPI-Dokument-URLs und die RDS-SPE-370-Mapping-Frage.</p>
+    </section>
+
     <section id="api">
-      <h2>4. FastAPI-Server für Automatisierung</h2>
+      <h2>5. FastAPI-Server für Automatisierung</h2>
       <p>Für Batch- oder Integrationsfälle kann das Tool als API laufen.</p>
       <pre><code>uv run vidis serve --host 127.0.0.1 --port 8645</code></pre>
       <div class="grid">
@@ -305,7 +316,7 @@ curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf<
     </section>
 
     <section id="outputs">
-      <h2>5. Ergebnisse verstehen</h2>
+      <h2>6. Ergebnisse verstehen</h2>
       <div class="status-grid">
         <div class="status"><strong class="pass">PASS</strong><br>Automatisch ausreichende Evidenz gefunden.</div>
         <div class="status"><strong class="fail">FAIL</strong><br>Automatisch klare Gegen-Evidenz gefunden.</div>
@@ -323,7 +334,7 @@ curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf<
     </section>
 
     <section id="troubleshooting">
-      <h2>6. Troubleshooting</h2>
+      <h2>7. Troubleshooting</h2>
       <h3>CLI zeigt veraltete Kommandos</h3>
       <p>Aktuell gibt es <code>vidis check</code>, <code>vidis serve</code> und <code>vidis-report</code>. Alte Namen wie <code>check-url</code> sind nicht gültig.</p>
       <h3>Browser-/Website-Checks schlagen fehl</h3>
