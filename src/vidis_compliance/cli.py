@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 from .models import JobConfig, JobResult, CheckFinding, CriteriaIndex, VidisCriterion
 from .checks.site.cookies import classify_cookies, classify_tracking_pixel, classify_local_storage
+from .checks.site.basic_http import check_site_transport
 from .sources.site.crawl import crawl
 from .sources.code.inspect import inspect_code_path
 from .report.markdown import generate_markdown
@@ -61,6 +62,7 @@ def check(
         s3, n3 = classify_local_storage(page_signals, audience)
         findings.append(CheckFinding(criterion="RDS-CUC-374", status=s3, note=n3))
         findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note="Datenschutzerklärung vs. Cookies abgleichen"))
+        findings.extend(check_site_transport(url))
     if code_path:
         code_findings, code_capture = inspect_code_path(code_path, audience)
         by_criterion = {finding.criterion: finding for finding in findings}

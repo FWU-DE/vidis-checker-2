@@ -101,13 +101,13 @@ RDS-IPF-367:
   description: |
     
 RDS-AGB-368:
-  name: Nutzungsbedingungen/AGB: Datenschutzkonform
+  name: "Nutzungsbedingungen/AGB: Datenschutzkonform"
   area: RDS
   must: true
   description: |
     
 RDS-AGB-369:
-  name: Nutzungsbedingungen/AGB: AVV-konform
+  name: "Nutzungsbedingungen/AGB: AVV-konform"
   area: RDS
   must: true
   description: |
