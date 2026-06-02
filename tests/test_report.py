@@ -223,7 +223,11 @@ def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_p
         ],
     )
     raw_capture = {
-        "cookies": [{"name": "_ga"}, {"name": "CookieConsent"}],
+        "cookies": [
+            {"name": "_ga", "domain": ".example.test", "path": "/"},
+            {"name": "CookieConsent", "domain": "example.test", "path": "/"},
+            {"name": "unknown_cookie", "domain": "example.test", "path": "/"},
+        ],
         "local_storage": {"matomo.id": "secret", "CookieConsentBulkSetting-abc": "1"},
         "session_storage": {"IDE": "secret", "csrf_token": "secret"},
     }
@@ -232,9 +236,13 @@ def test_generate_markdown_lists_cookie_local_and_session_storage_evidence(tmp_p
     generate_markdown(result, output, raw_capture=raw_capture)
 
     text = output.read_text(encoding="utf-8")
-    assert "| Cookie-Namen | CookieConsent, _ga |" in text
-    assert "| LocalStorage-Schlüssel | CookieConsentBulkSetting-abc, matomo.id |" in text
-    assert "| SessionStorage-Schlüssel | IDE, csrf_token |" in text
+    assert "| Cookie: _ga | nicht essenziell — Google Analytics / Analytics" in text
+    assert "| Cookie: CookieConsent | essenziell — Cookiebot / Functional" in text
+    assert "| Cookie: unknown_cookie | manuell prüfen — Keine Einstufung in cookie_db.json/Heuristik" in text
+    assert "| LocalStorage: matomo.id | nicht essenziell — Heuristik: Tracking-/Analyse-Storage" in text
+    assert "| LocalStorage: CookieConsentBulkSetting-abc | essenziell — Cookiebot / Functional" in text
+    assert "| SessionStorage: IDE | nicht essenziell — DoubleClick/Google Marketing / Marketing" in text
+    assert "| SessionStorage: csrf_token | essenziell — Allowlist-Präfix" in text
     assert "secret" not in text
 
 

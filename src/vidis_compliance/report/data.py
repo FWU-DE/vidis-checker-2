@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from ..checks.site.cookies import _classify_name
+from ..checks.site.cookie_db import get_default_cookie_database
 from ..models import CheckFinding, CriteriaIndex, JobResult, VidisCriterion
 
 HERE = Path(__file__).resolve().parents[1]
@@ -132,6 +134,55 @@ def _explain_finding(criterion: VidisCriterion, finding: CheckFinding) -> str:
     )
 
 
+def _classification_text(name: str) -> str:
+    database = get_default_cookie_database()
+    bucket, detail = _classify_name(name, database)
+    status = {
+        "essential": "essenziell",
+        "non_essential": "nicht essenziell",
+        "unknown": "manuell prüfen",
+    }.get(bucket, "manuell prüfen")
+    cookie_info = database.get_cookie_info(name)
+    if cookie_info is not None:
+        source = f"{cookie_info.platform} / {cookie_info.category}"
+        if cookie_info.retention_period:
+            source += f"; Speicherdauer: {cookie_info.retention_period}"
+        if cookie_info.description:
+            source += f"; {cookie_info.description}"
+        return f"{status} — {source}"
+    if "Heuristik:" in detail:
+        return f"{status} — {detail.split('(', 1)[-1].rstrip(')')}"
+    if "Allowlist-Präfix" in detail:
+        return f"{status} — Allowlist-Präfix"
+    return f"{status} — Keine Einstufung in cookie_db.json/Heuristik"
+
+
+def _cookie_storage_inventory_evidence(
+    raw_capture: dict[str, Any],
+    *,
+    include_cookies: bool = True,
+) -> list[EvidenceItem]:
+    evidence: list[EvidenceItem] = []
+    if include_cookies:
+        cookies = raw_capture.get("cookies") or []
+        cookie_names = sorted({str(cookie.get("name") or "").strip() for cookie in cookies if isinstance(cookie, dict) and str(cookie.get("name") or "").strip()}, key=str.lower)
+        evidence.append(EvidenceItem("Anzahl Cookies", str(len(cookie_names))))
+        if cookie_names:
+            for name in cookie_names:
+                evidence.append(EvidenceItem(f"Cookie: {name}", _classification_text(name)))
+        else:
+            evidence.append(EvidenceItem("Cookie", "—"))
+    for label, capture_key in (("LocalStorage", "local_storage"), ("SessionStorage", "session_storage")):
+        values = raw_capture.get(capture_key) or {}
+        keys = sorted({str(key).strip() for key in values.keys() if str(key).strip()}, key=str.lower) if isinstance(values, dict) else []
+        if keys:
+            for key in keys:
+                evidence.append(EvidenceItem(f"{label}: {key}", _classification_text(key)))
+        else:
+            evidence.append(EvidenceItem(label, "—"))
+    return evidence
+
+
 def _evidence_for_finding(
     finding: CheckFinding,
     raw_capture: dict[str, Any] | None,
@@ -144,23 +195,7 @@ def _evidence_for_finding(
         return evidence
 
     if finding.criterion in {"RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-453"}:
-        cookies = raw_capture.get("cookies") or []
-        local_storage = raw_capture.get("local_storage") or {}
-        session_storage = raw_capture.get("session_storage") or {}
-        evidence.append(EvidenceItem("Anzahl Cookies", str(len(cookies))))
-        if cookies:
-            names = sorted({str(c.get("name", "")) for c in cookies if c.get("name")})
-            evidence.append(EvidenceItem("Cookie-Namen", ", ".join(names[:20]) or "—"))
-        evidence.append(EvidenceItem("LocalStorage-Schlüssel", ", ".join(sorted(local_storage.keys())) or "—"))
-        evidence.append(EvidenceItem("SessionStorage-Schlüssel", ", ".join(sorted(session_storage.keys())) or "—"))
-        if finding.criterion == "RDS-CUC-453":
-            cuc_453 = raw_capture.get("rds_cuc_453") or {}
-            if cuc_453.get("observed"):
-                evidence.append(EvidenceItem("RDS-CUC-453 Inventar", ", ".join(cuc_453["observed"])))
-            if cuc_453.get("present"):
-                evidence.append(EvidenceItem("Beschriebene Cookies/Speicher", ", ".join(cuc_453["present"])))
-            if cuc_453.get("missing"):
-                evidence.append(EvidenceItem("Fehlende Beschreibungen", ", ".join(cuc_453["missing"])))
+        evidence.extend(_cookie_storage_inventory_evidence(raw_capture))
         if finding.criterion == "RDS-CUC-453":
             cuc_453 = raw_capture.get("rds_cuc_453") or {}
             if cuc_453.get("observed"):
@@ -175,10 +210,7 @@ def _evidence_for_finding(
         evidence.append(EvidenceItem("Netzwerkanfragen", str(len(requests))))
         evidence.append(EvidenceItem("Skriptquellen", str(len(scripts))))
     if finding.criterion == "RDS-CUC-374":
-        local_storage = raw_capture.get("local_storage") or {}
-        session_storage = raw_capture.get("session_storage") or {}
-        evidence.append(EvidenceItem("LocalStorage-Schlüssel", ", ".join(local_storage.keys()) or "—"))
-        evidence.append(EvidenceItem("SessionStorage-Schlüssel", ", ".join(session_storage.keys()) or "—"))
+        evidence.extend(_cookie_storage_inventory_evidence(raw_capture, include_cookies=False))
     if finding.criterion in {"RDS-CUC-375", "RDS-CUC-376", "RDS-CUC-377"}:
         browser_signals = raw_capture.get("browser_signals") or {}
         device_storage = browser_signals.get("device_storage") or []
@@ -188,15 +220,10 @@ def _evidence_for_finding(
         if finding.criterion in {"RDS-CUC-376", "RDS-CUC-377"}:
             evidence.append(EvidenceItem("Fingerprinting-/Entropy-APIs", _api_signal_summary(fingerprinting)))
         if finding.criterion == "RDS-CUC-377":
-            cookies = raw_capture.get("cookies") or []
-            local_storage = raw_capture.get("local_storage") or {}
-            session_storage = raw_capture.get("session_storage") or {}
             requests = raw_capture.get("requests") or []
             scripts = raw_capture.get("scripts") or []
             document_capture = raw_capture.get("document_capture") or {}
-            evidence.append(EvidenceItem("Cookie-Namen", ", ".join(sorted({str(c.get("name", "")) for c in cookies if c.get("name")})) or "—"))
-            evidence.append(EvidenceItem("LocalStorage-Schlüssel", ", ".join(sorted(local_storage.keys())) or "—"))
-            evidence.append(EvidenceItem("SessionStorage-Schlüssel", ", ".join(sorted(session_storage.keys())) or "—"))
+            evidence.extend(_cookie_storage_inventory_evidence(raw_capture))
             evidence.append(EvidenceItem("Netzwerkanfragen", str(len(requests))))
             evidence.append(EvidenceItem("Skriptquellen", str(len(scripts))))
             snippets = (document_capture.get("evidence") or {}).get("RDS-CUC-377") if isinstance(document_capture, dict) else None
