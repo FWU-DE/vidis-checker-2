@@ -120,6 +120,7 @@ _AUTOMATED_BY_DOCUMENTS = {
 }
 _MANUAL_OVERLAY = {
     "RDS-CUC-453": "Datenschutzerklärung muss weiterhin gegen reale Cookies/Consent-Texte abgeglichen werden.",
+    "RDS-CUC-374": "Automatisch bewertbar: keine oder nur erlaubte Storage-Keys bestehen; unbekannte Storage-Keys bleiben reviewpflichtig.",
     "RDS-CUC-375": "Device-storage signals können nur Indizien liefern; Zweckbindung bleibt reviewpflichtig.",
     "RDS-CUC-376": "Fingerprinting-Signale sind technisch erkennbar, Rechts-/Zweckbewertung bleibt reviewpflichtig.",
     "RDS-CUC-377": "Nicht-pädagogischer Zweck ist nur mit Produktkontext sicher bewertbar.",

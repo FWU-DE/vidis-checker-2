@@ -232,7 +232,7 @@ def classify_local_storage(data: Dict[str, Any], audience: str) -> Tuple[Status,
     if essential_details:
         keys = ", ".join(sorted({item.split(': ', 1)[-1] for item in essential_details}))
         return 'PASS', f"Alle erkannten Browser-Storage-Schlüssel sind laut cookie_db.json/Allowlist essenziell: {keys}"
-    return 'MANUELL', 'Keine LocalStorage-/SessionStorage-Schlüssel erkannt'
+    return 'PASS', 'Keine LocalStorage-/SessionStorage-Schlüssel erkannt'
 
 
 def _signal_api_names(data: Dict[str, Any], group: str) -> list[str]:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from vidis_compliance.checks.site.cookie_db import CookieDatabase
-from vidis_compliance.checks.site.cookies import classify_cookies
+from vidis_compliance.checks.site.cookies import classify_cookies, classify_local_storage
 
 
 def _write_cookie_db(path: Path) -> None:
@@ -190,3 +190,29 @@ def test_classify_cookies_reports_unknown_storage_keys_for_manual_review(tmp_pat
     assert "Unbekannter SessionStorage" in note
     assert "unknownSession" in note
     assert "secret" not in note
+
+
+
+def test_classify_local_storage_passes_when_no_browser_storage_is_present() -> None:
+    status, note = classify_local_storage({"local_storage": {}, "session_storage": {}}, "SuS")
+
+    assert status == "PASS"
+    assert "Keine LocalStorage-/SessionStorage-Schlüssel erkannt" in note
+
+
+def test_classify_local_storage_keeps_unknown_keys_manual_and_tracker_keys_fail() -> None:
+    unknown_status, unknown_note = classify_local_storage(
+        {"local_storage": {"wpEmojiSettingsSupports": "secret"}, "session_storage": {}},
+        "SuS",
+    )
+    tracker_status, tracker_note = classify_local_storage(
+        {"local_storage": {"matomo.id": "secret"}, "session_storage": {}},
+        "SuS",
+    )
+
+    assert unknown_status == "MANUELL"
+    assert "Unbekannter Browser-Storage" in unknown_note
+    assert "secret" not in unknown_note
+    assert tracker_status == "FAIL"
+    assert "Nicht essenzieller Browser-Storage" in tracker_note
+    assert "secret" not in tracker_note
