@@ -6,6 +6,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Sequence
+from urllib.parse import urldefrag, urljoin, urlparse
 
 AgentTask = Literal["legal", "student", "teacher", "register", "logout"]
 DEFAULT_AGENT_TASKS: list[AgentTask] = ["legal", "student", "teacher", "register", "logout"]
@@ -47,6 +48,7 @@ class DefaultAgenticRunner:
         pages: int,
         vidis_portal: str | None = None,
         vidis_login_label: str | None = None,
+        instructions: list[str] | None = None,
     ) -> AgenticCrawlResult:
         from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
@@ -66,10 +68,27 @@ class DefaultAgenticRunner:
                 self._goto(page, base_url, result, "open")
                 if username or password:
                     self._try_login(page, username, password, result, vidis_portal=vidis_portal, vidis_login_label=vidis_login_label)
-                for index, task_type in enumerate(task_types[: max(pages, 1)], start=1):
-                    self._perform_task(page, base_url, task_type, result)
-                    screenshot_rel = f"screenshots/{index:02d}-{task_type}.png"
-                    pdf_rel = f"pdfs/{index:02d}-{task_type}.pdf"
+                target_pages = max(pages, 1)
+                self._browse_click_paths(page, base_url, result, target_pages=target_pages, instructions=instructions, reset_visited=True)
+                if not result.visited_urls:
+                    result.visited_urls.append(str(page.url))
+                    result.actions.append({"action": "visit", "url": str(page.url)})
+                    result.steps.append({"action": "visit", "url": str(page.url), "note": "no click paths found"})
+                artifact_entries = [step for step in result.steps if step.get("url")][-target_pages:]
+                for index, step in enumerate(artifact_entries, start=1):
+                    label = str(step.get("task") or step.get("instruction") or step.get("label") or step.get("action") or "page")
+                    slug = self._slug(label)[:40] or "page"
+                    screenshot_rel = f"screenshots/{index:02d}-{slug}.png"
+                    pdf_rel = f"pdfs/{index:02d}-{slug}.pdf"
+                    try:
+                        target_url = str(step.get("url") or page.url)
+                        if target_url and self._canonical_url(str(page.url)) != self._canonical_url(target_url):
+                            page.goto(target_url, wait_until="networkidle", timeout=10_000)
+                    except Exception:
+                        try:
+                            page.goto(str(step.get("url") or page.url), wait_until="domcontentloaded", timeout=10_000)
+                        except Exception:
+                            pass
                     page.screenshot(path=str(output_dir / screenshot_rel), full_page=True)
                     try:
                         page.pdf(path=str(output_dir / pdf_rel), print_background=True)
@@ -305,6 +324,129 @@ class DefaultAgenticRunner:
                 page.wait_for_load_state("domcontentloaded", timeout=5_000)
             except Exception:
                 pass
+
+    def _browse_click_paths(
+        self,
+        page: Any,
+        base_url: str,
+        result: AgenticCrawlResult,
+        *,
+        target_pages: int,
+        instructions: list[str] | None = None,
+        reset_visited: bool = False,
+    ) -> None:
+        if reset_visited:
+            result.visited_urls.clear()
+        seen = {self._canonical_url(url) for url in result.visited_urls}
+        seen_clicks: set[str] = set()
+        for instruction in instructions or []:
+            if len(result.visited_urls) >= target_pages:
+                return
+            label = self._label_from_instruction(instruction)
+            clicked = (self._click_first_label(page, [label], timeout=4_000) or self._click_first(page, self._text_selectors([label]), timeout=4_000)) if label else False
+            self._wait_for_network_idle(page)
+            current_url = str(page.url)
+            canonical = self._canonical_url(current_url)
+            click_key = self._click_key(canonical, label)
+            if clicked and click_key not in seen_clicks:
+                seen.add(canonical)
+                seen_clicks.add(click_key)
+                result.visited_urls.append(current_url)
+                result.actions.append({"action": "instruction_click", "url": current_url, "label": label, "instruction": instruction})
+                result.steps.append({"action": "instruction_click", "url": current_url, "label": label, "instruction": instruction})
+        if str(page.url) and len(result.visited_urls) < target_pages:
+            current = self._canonical_url(str(page.url))
+            if current not in seen:
+                seen.add(current)
+                seen_clicks.add(self._click_key(current, "authenticated start"))
+                result.visited_urls.append(str(page.url))
+                result.actions.append({"action": "click_path", "url": str(page.url), "label": "authenticated start"})
+                result.steps.append({"action": "click_path", "url": str(page.url), "label": "authenticated start"})
+        attempts = 0
+        while len(result.visited_urls) < target_pages and attempts < target_pages * 4:
+            attempts += 1
+            candidate = self._next_internal_link(page, base_url, seen_clicks)
+            if not candidate:
+                break
+            clicked = self._click_first_label(page, [candidate["label"]], timeout=3_000)
+            if not clicked:
+                try:
+                    page.goto(candidate["url"], wait_until="networkidle", timeout=10_000)
+                    clicked = True
+                except Exception:
+                    try:
+                        page.goto(candidate["url"], wait_until="domcontentloaded", timeout=10_000)
+                        clicked = True
+                    except Exception:
+                        clicked = False
+            self._wait_for_network_idle(page)
+            current_url = str(page.url) if clicked else candidate["url"]
+            canonical = self._canonical_url(current_url)
+            click_key = self._click_key(canonical, candidate["label"])
+            if click_key in seen_clicks:
+                seen.add(self._canonical_url(candidate["url"]))
+                continue
+            seen.add(canonical)
+            seen_clicks.add(click_key)
+            result.visited_urls.append(current_url)
+            result.actions.append({"action": "click_path", "url": current_url, "label": candidate["label"], "source_url": candidate["url"]})
+            result.steps.append({"action": "click_path", "url": current_url, "label": candidate["label"], "source_url": candidate["url"]})
+
+    def _next_internal_link(self, page: Any, base_url: str, seen_clicks: set[str]) -> dict[str, str] | None:
+        try:
+            links = page.locator("a[href]").all()
+        except Exception:
+            links = []
+        base_host = urlparse(base_url).netloc
+        for link in links:
+            try:
+                href = link.get_attribute("href")
+                if not href:
+                    continue
+                absolute = urljoin(str(page.url) or base_url, href)
+                parsed = urlparse(absolute)
+                if parsed.scheme not in {"http", "https"} or parsed.netloc != base_host:
+                    continue
+                canonical = self._canonical_url(absolute)
+                label = " ".join(str(link.inner_text(timeout=500) or "").split()) or parsed.path.rsplit("/", 1)[-1] or "page"
+                if self._click_key(canonical, label) in seen_clicks:
+                    continue
+                if self._is_low_value_link(label, absolute):
+                    continue
+                return {"url": absolute, "label": label}
+            except Exception:
+                continue
+        return None
+
+    def _label_from_instruction(self, instruction: str) -> str:
+        cleaned = instruction.strip().rstrip(".")
+        for pattern in [
+            r"(?:gehe|geh|klicke|click|öffne|oeffne)\s+(?:auf|zu|in|den|die|das|dort)?\s*['\"]?([^'\".,;]+)",
+            r"(?:seite|menüpunkt|menuepunkt|button|link)\s+['\"]?([^'\".,;]+)",
+        ]:
+            match = re.search(pattern, cleaned, re.IGNORECASE)
+            if match:
+                label = match.group(1).strip()
+                return re.sub(r"\s+(?:und|dann|anschließend|anschliessend)\b.*$", "", label, flags=re.IGNORECASE).strip()
+        return cleaned
+
+    def _canonical_url(self, url: str) -> str:
+        without_fragment, _fragment = urldefrag(url)
+        parsed = urlparse(without_fragment)
+        path = parsed.path or "/"
+        if path.endswith("/index.html") or path.endswith("/index.htm"):
+            path = path.rsplit("/", 1)[0] + "/"
+        return parsed._replace(path=path, query="").geturl().rstrip("/") or parsed._replace(path="/").geturl()
+
+    def _click_key(self, canonical_url: str, label: str) -> str:
+        return f"{canonical_url}|{self._slug(label)}"
+
+    def _is_low_value_link(self, label: str, url: str) -> bool:
+        value = f"{label} {url}".casefold()
+        return any(token in value for token in ["mailto:", "tel:", "download", "javascript:", "#", "cookie"])
+
+    def _slug(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
 
     def _perform_task(self, page: Any, base_url: str, task_type: str, result: AgenticCrawlResult) -> None:
         keywords = {
