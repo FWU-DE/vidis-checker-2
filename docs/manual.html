@@ -306,11 +306,12 @@ uv run vidis check \
   --agent-task student \
   --agent-persona SuS \
   --agent-vidis-portal 'Test Landesportal' \
+  --agent-vidis-login-label 'Mit VIDIS einloggen' \
   --output auth-scan</code></pre>
       <ul>
         <li>Unterstützte Tasks: <code>legal</code>, <code>student</code>, <code>teacher</code>, <code>register</code>, <code>logout</code>.</li>
         <li>Credentials kommen aus <code>--agent-username</code>/<code>--agent-password</code> oder <code>VIDIS_AGENT_USERNAME</code>/<code>VIDIS_AGENT_PASSWORD</code>.</li>
-        <li>Für Broker-Flows mit vorgelagerter Portalauswahl wählt <code>--agent-vidis-portal</code> bzw. <code>VIDIS_AGENT_VIDIS_PORTAL</code> zuerst das gewünschte Landes-/Schulportal, zum Beispiel <code>Test Landesportal</code>, und gibt erst danach Benutzername und Passwort ein.</li>
+        <li>Für Broker-Flows mit vorgelagerter Portalauswahl wählt <code>--agent-vidis-portal</code> bzw. <code>VIDIS_AGENT_VIDIS_PORTAL</code> zuerst das gewünschte Landes-/Schulportal, zum Beispiel <code>Test Landesportal</code>, und gibt erst danach Benutzername und Passwort ein. Der VIDIS-/SSO-Startbutton wird automatisch über typische Beschriftungen wie <code>VIDIS</code>, <code>Schulportal</code>, <code>Landesportal</code> oder <code>SSO</code> erkannt; bei abweichendem Text kann <code>--agent-vidis-login-label</code> bzw. <code>VIDIS_AGENT_VIDIS_LOGIN_LABEL</code> gesetzt werden.</li>
         <li>Passwörter und tokenartige Felder werden aus JSON-Artefakten und Traces entfernt (<code>***REDACTED***</code>).</li>
         <li>Artefakte liegen unter <code>results/&lt;job_id&gt;/agent/</code>: <code>agent_capture.json</code>, <code>step_result.jsonl</code>, <code>screenshots/</code> und <code>pdfs/</code>.</li>
       </ul>

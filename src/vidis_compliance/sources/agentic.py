@@ -46,6 +46,7 @@ class DefaultAgenticRunner:
         persona: str,
         pages: int,
         vidis_portal: str | None = None,
+        vidis_login_label: str | None = None,
     ) -> AgenticCrawlResult:
         from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
@@ -64,7 +65,7 @@ class DefaultAgenticRunner:
             try:
                 self._goto(page, base_url, result, "open")
                 if username or password:
-                    self._try_login(page, username, password, result, vidis_portal=vidis_portal)
+                    self._try_login(page, username, password, result, vidis_portal=vidis_portal, vidis_login_label=vidis_login_label)
                 for index, task_type in enumerate(task_types[: max(pages, 1)], start=1):
                     self._perform_task(page, base_url, task_type, result)
                     screenshot_rel = f"screenshots/{index:02d}-{task_type}.png"
@@ -103,10 +104,11 @@ class DefaultAgenticRunner:
         result: AgenticCrawlResult,
         *,
         vidis_portal: str | None = None,
+        vidis_login_label: str | None = None,
     ) -> None:
         result.steps.append({"action": "login", "username": username, "password": password})
         if vidis_portal:
-            self._select_vidis_portal(page, vidis_portal, result)
+            self._select_vidis_portal(page, vidis_portal, result, vidis_login_label=vidis_login_label)
         filled = False
         for selector in ["input[name='username']", "input[name='email']", "input[type='email']", "input[type='text']"]:
             try:
@@ -136,18 +138,10 @@ class DefaultAgenticRunner:
         result.visited_urls.append(str(page.url))
         result.actions.append({"action": "login", "url": str(page.url), "username": username, "vidis_portal": vidis_portal})
 
-    def _select_vidis_portal(self, page: Any, vidis_portal: str, result: AgenticCrawlResult) -> None:
-        self._click_first_role(page, [
-            ("button", "Mit VIDIS einloggen"),
-            ("button", "VIDIS"),
-            ("link", "Mit VIDIS einloggen"),
-            ("link", "VIDIS"),
-        ], timeout=4_000) or self._click_first(page, [
-            "button:has-text('Mit VIDIS einloggen')",
-            "a:has-text('Mit VIDIS einloggen')",
-            "button:has-text('VIDIS')",
-            "a:has-text('VIDIS')",
-        ], timeout=4_000)
+    def _select_vidis_portal(self, page: Any, vidis_portal: str, result: AgenticCrawlResult, *, vidis_login_label: str | None = None) -> None:
+        login_labels = self._vidis_login_labels(vidis_login_label)
+        clicked_start = self._click_first_label(page, login_labels, timeout=4_000) or self._click_first(page, self._text_selectors(login_labels), timeout=4_000)
+        result.steps.append({"action": "open_vidis_login", "vidis_login_label": vidis_login_label, "clicked": clicked_start})
         self._wait_for_network_idle(page)
         self._wait_for_any_selector(page, [
             "input[role='combobox']",
@@ -215,6 +209,49 @@ class DefaultAgenticRunner:
         ], timeout=5_000)
         self._wait_for_network_idle(page)
         result.steps.append({"action": "submit_vidis_portal", "portal": vidis_portal, "clicked": clicked_secure})
+
+    def _vidis_login_labels(self, configured_label: str | None) -> list[str]:
+        labels = [
+            configured_label,
+            "Mit VIDIS einloggen",
+            "Anmelden mit VIDIS",
+            "VIDIS",
+            "Login über Schulportal",
+            "Anmeldung über Schulportal",
+            "Login über Landesportal",
+            "Anmeldung über Landesportal",
+            "Schulportal",
+            "Landesportal",
+            "Single Sign-On",
+            "SSO",
+        ]
+        seen: set[str] = set()
+        result: list[str] = []
+        for label in labels:
+            if label and label.casefold() not in seen:
+                seen.add(label.casefold())
+                result.append(label)
+        return result
+
+    def _text_selectors(self, labels: list[str]) -> list[str]:
+        selectors: list[str] = []
+        for label in labels:
+            escaped = label.replace("'", "\\'")
+            selectors.extend([
+                f"button:has-text('{escaped}')",
+                f"a:has-text('{escaped}')",
+                f"[role='button']:has-text('{escaped}')",
+                f"[role='link']:has-text('{escaped}')",
+                f"text={label}",
+            ])
+        return selectors
+
+    def _click_first_label(self, page: Any, labels: list[str], *, timeout: int) -> bool:
+        role_names: list[tuple[str, str | None]] = []
+        for label in labels:
+            role_names.append(("button", label))
+            role_names.append(("link", label))
+        return self._click_first_role(page, role_names, timeout=timeout)
 
     def _click_first_role(self, page: Any, role_names: list[tuple[str, str | None]], *, timeout: int) -> bool:
         for role, name in role_names:
