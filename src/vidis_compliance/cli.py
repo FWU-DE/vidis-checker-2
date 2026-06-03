@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 import typer
 from .models import JobConfig, JobResult, CheckFinding, CriteriaIndex, VidisCriterion
 from .checks.site.advertising import (
@@ -67,6 +68,31 @@ def _extract_privacy_text_for_cookie_descriptions(document_inputs) -> str:
     return "\n".join(texts)
 
 
+def _ai_model_entry(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    provider = "—"
+    model = value.strip()
+    if ":" in model:
+        provider, model = model.split(":", 1)
+    return {
+        "task": "VIDIS KI-Bewertungen",
+        "provider": provider.strip() or "—",
+        "model": model.strip() or "nicht angegeben",
+        "status": "vom CLI übergeben",
+    }
+
+
+def _append_ai_model_metadata(raw_capture: dict[str, Any] | None, ai_model: str | None) -> dict[str, Any] | None:
+    entry = _ai_model_entry(ai_model)
+    if entry is None:
+        return raw_capture
+    if raw_capture is None:
+        raw_capture = {}
+    raw_capture.setdefault("ai_models", []).append(entry)
+    return raw_capture
+
+
 @app.command()
 def check(
     url: str = typer.Option(None, "--url"),
@@ -87,6 +113,7 @@ def check(
     agent_password: str | None = typer.Option(None, "--agent-password", envvar="VIDIS_AGENT_PASSWORD", help="Login-Passwort; alternativ VIDIS_AGENT_PASSWORD."),
     lighthouse: bool = typer.Option(False, "--lighthouse", help="Optional Lighthouse JSON/HTML-Audit als Report-Artefakt erzeugen."),
     webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
+    ai_model: str | None = typer.Option(None, "--ai-model", help="Verwendetes KI-Modell für KI-gestützte Bewertungen, z. B. openai:gpt-4.1-mini."),
 ):
     """Run unified VIDIS checks (site and/or code)."""
     crit = load_criteria()
@@ -226,6 +253,7 @@ def check(
         if k not in wired:
             findings.append(CheckFinding(criterion=k, status="MANUELL", note="Not yet implemented"))
     res = JobResult(job_id=cfg.job_id, findings=findings)
+    raw_capture = _append_ai_model_metadata(raw_capture, ai_model)
 
     outdir = Path("results") / cfg.job_id
     outdir.mkdir(parents=True, exist_ok=True)

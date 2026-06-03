@@ -90,6 +90,7 @@ def render_pdf(document: ReportDocument, output_pdf: Path) -> None:
     counts = _status_counts(document)
 
     story.extend(_cover(document, counts, styles))
+    story.extend(_ai_model_overview(document, styles))
     story.extend(_screenshot_overview(document, styles))
     story.extend(_cookie_storage_overview(document, styles))
     story.extend(_code_review_overview(document, styles))
@@ -207,6 +208,38 @@ def _kpi_table(counts: dict[str, int]) -> Table:
 def _kpi_cell(label: str, value: int) -> list:
     styles = _styles()
     return [Paragraph(str(value), styles["KpiNumber"]), Paragraph(label, styles["KpiLabel"])]
+
+
+def _ai_model_overview(document: ReportDocument, styles) -> list:
+    evidence = document.ai_model_evidence
+    if not evidence:
+        return []
+    return [
+        Paragraph("KI-Modell-Transparenz", styles["SectionTitle"]),
+        Paragraph(
+            "Wenn KI-gestuetzte Bewertungen oder optionale Vision-/Dokumentenpruefungen konfiguriert sind, nennt der Report hier Anbieter und Modell.",
+            styles["BodyText"],
+        ),
+        _ai_model_table(evidence),
+        Spacer(1, 0.45 * cm),
+    ]
+
+
+def _ai_model_table(items) -> Table:
+    rows = [[Paragraph("Aufgabe", _small_bold()), Paragraph("Anbieter", _small_bold()), Paragraph("Modell", _small_bold()), Paragraph("Status", _small_bold())]]
+    for item in items:
+        parts = str(item.value).split(" | ", 2)
+        while len(parts) < 3:
+            parts.append("—")
+        rows.append([
+            Paragraph(_xml_escape(_ascii_pdf_text(str(item.label))), _small()),
+            Paragraph(_xml_escape(_ascii_pdf_text(parts[0])), _small()),
+            Paragraph(_xml_escape(_ascii_pdf_text(parts[1])), _small()),
+            Paragraph(_xml_escape(_ascii_pdf_text(parts[2])), _small()),
+        ])
+    table = Table(rows, colWidths=[5.0 * cm, 3.2 * cm, 4.2 * cm, 3.0 * cm], repeatRows=1, hAlign="LEFT")
+    table.setStyle(_table_style())
+    return table
 
 
 def _screenshot_overview(document: ReportDocument, styles) -> list:
