@@ -187,6 +187,8 @@ def test_cli_check_code_path_outputs_provider_code_review_report_section(tmp_pat
             "codejob-report",
             "--audience",
             "SuS",
+            "--ai-model",
+            "openai:gpt-4.1-mini",
             "--md",
             "results/codejob-report/report.md",
             "--pdf",
@@ -202,6 +204,8 @@ def test_cli_check_code_path_outputs_provider_code_review_report_section(tmp_pat
     assert result_path.exists()
     assert code_capture_path.exists()
     text = report_md.read_text(encoding="utf-8")
+    assert "## KI-Modell-Transparenz" in text
+    assert "| VIDIS KI-Bewertungen | openai | gpt-4.1-mini | vom CLI übergeben |" in text
     assert "## Code-Durchsicht für Anbieter" in text
     assert "kein Audit" in text
     assert "keine Zertifizierung" in text

@@ -154,6 +154,53 @@ def test_generate_markdown_lists_browser_signal_evidence_without_storage_values(
     assert "large-secret-value" not in text
 
 
+def test_generate_markdown_includes_ai_model_metadata(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[CheckFinding(criterion="RDS-IPF-364", status="MANUELL", note="Visuelle Link-Prominenz prüfen")],
+    )
+    output = tmp_path / "report.md"
+
+    generate_markdown(
+        result,
+        output,
+        raw_capture={
+            "ai_models": [
+                {"task": "Vision-Review", "provider": "OpenAI", "model": "gpt-4.1-mini", "status": "konfiguriert"},
+                {"task": "Semantische Dokumentbewertung", "model": "claude-3-5-sonnet", "status": "optional"},
+            ],
+            "vision_reviews": [
+                {"label": "home", "status": "MANUELL", "note": "Vision prüfen", "criterion_suggestions": ["RDS-IPF-364"]}
+            ],
+        },
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "## KI-Modell-Transparenz" in text
+    assert "| Vision-Review | OpenAI | gpt-4.1-mini | konfiguriert |" in text
+    assert "| Semantische Dokumentbewertung | — | claude-3-5-sonnet | optional |" in text
+
+
+def test_generate_pdf_includes_ai_model_metadata(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="unit",
+        findings=[CheckFinding(criterion="RDS-IPF-364", status="MANUELL", note="Visuelle Link-Prominenz prüfen")],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(
+        result,
+        output,
+        raw_capture={"ai_models": [{"task": "Vision-Review", "provider": "OpenAI", "model": "gpt-4.1-mini", "status": "konfiguriert"}]},
+    )
+
+    text = subprocess.run(["pdftotext", str(output), "-"], check=True, text=True, capture_output=True).stdout
+    assert "KI-Modell-Transparenz" in text
+    assert "Vision-Review" in text
+    assert "OpenAI" in text
+    assert "gpt-4.1-mini" in text
+
+
 def test_generate_markdown_lists_screenshot_evidence_and_vision_manual_notes(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",

@@ -60,6 +60,26 @@ class ReportDocument:
         return ""
 
     @property
+    def ai_model_evidence(self) -> list[EvidenceItem]:
+        if not self.raw_capture:
+            return []
+        entries = self.raw_capture.get("ai_models") or self.raw_capture.get("ai_model") or []
+        if isinstance(entries, dict):
+            entries = [entries]
+        if not isinstance(entries, list):
+            return []
+        evidence: list[EvidenceItem] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            task = str(entry.get("task") or "KI-Bewertung")
+            provider = str(entry.get("provider") or "—")
+            model = str(entry.get("model") or "nicht angegeben")
+            status = str(entry.get("status") or "verwendet")
+            evidence.append(EvidenceItem(task, f"{provider} | {model} | {status}"))
+        return evidence
+
+    @property
     def cookie_storage_evidence(self) -> list[EvidenceItem]:
         if not self.raw_capture:
             return []

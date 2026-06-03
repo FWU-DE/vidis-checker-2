@@ -23,7 +23,7 @@ Manual
 - Open `docs/manual.html` in a browser for the full usage guide.
 
 Commands
-- vidis check --url https://example.com [--pages 8] [--pdf out/report.pdf] [--md out/report.md]
+- vidis check --url https://example.com [--pages 8] [--pdf out/report.pdf] [--md out/report.md] [--ai-model provider:model]
 - VIDIS_AGENT_USERNAME=user VIDIS_AGENT_PASSWORD='***' vidis check --url https://app.example.com --agentic --agent-task legal --agent-task student --agent-persona SuS --output auth-scan
 - vidis check --document agb.html --document avv.pdf [--privacy-url https://example.com/datenschutz] [--agb-url https://example.com/agb] [--avv-url https://example.com/avv]
 - vidis check --code-path /path/to/repo

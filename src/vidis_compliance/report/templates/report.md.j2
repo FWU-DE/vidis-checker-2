@@ -12,6 +12,19 @@
 {{ document.semantic_disclaimer }}
 
 {% endif -%}
+{% if document.ai_model_evidence -%}
+## KI-Modell-Transparenz
+
+Wenn KI-gestützte Bewertungen oder optionale Vision-/Dokumentenprüfungen konfiguriert sind, nennt der Report hier Anbieter und Modell. Fehlt ein Eintrag, wurde kein KI-Modell für den jeweiligen Lauf dokumentiert.
+
+| Aufgabe | Anbieter | Modell | Status |
+| --- | --- | --- | --- |
+{% for item in document.ai_model_evidence -%}
+{% set parts = item.value.split(' | ', 2) -%}
+| {{ item.label | table_escape }} | {{ parts[0] | table_escape }} | {{ parts[1] | table_escape }} | {{ parts[2] | table_escape }} |
+{% endfor %}
+
+{% endif -%}
 | Status | Anzahl |
 | --- | ---: |
 {% for status in ["PASS", "FAIL", "MANUELL"] -%}
