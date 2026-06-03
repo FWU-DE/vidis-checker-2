@@ -23,6 +23,8 @@ SEMANTIC_EVALUATION_PREFIXES = ("RDS-IPF-", "RDS-AGB-", "RDS-WER-", "RDS-VIN-")
 SEMANTIC_EVALUATION_CODES = {"RDS-DSO-383", "RDS-DEV-380", "RDS-DEV-466", "RDS-SPE-370", "RDS-CUC-453"}
 COOKIE_STORAGE_SECTION_CRITERIA = {"RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-374", "RDS-CUC-377", "RDS-CUC-453"}
 COOKIE_STORAGE_SECTION_ORDER = ("RDS-CUC-371", "RDS-CUC-372", "RDS-CUC-374", "RDS-CUC-377", "RDS-CUC-453")
+HTTPS_TRANSPORT_SECTION_CRITERIA = {"ITS-ENC-359", "ITS-ENC-360", "ITS-ENC-361"}
+HTTPS_TRANSPORT_SECTION_ORDER = ("ITS-ENC-359", "ITS-ENC-360", "ITS-ENC-361")
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,24 @@ class ReportDocument:
             model = str(entry.get("model") or "nicht angegeben")
             status = str(entry.get("status") or "verwendet")
             evidence.append(EvidenceItem(task, f"{provider} | {model} | {status}"))
+        return evidence
+
+    @property
+    def https_transport_evidence(self) -> list[EvidenceItem]:
+        reports = [
+            report
+            for report in self.criteria_reports
+            if report.criterion.code in HTTPS_TRANSPORT_SECTION_CRITERIA
+        ]
+        if not reports:
+            return []
+        reports.sort(key=lambda report: HTTPS_TRANSPORT_SECTION_ORDER.index(report.criterion.code))
+        covered = [report.criterion.code for report in reports]
+        evidence = [EvidenceItem("Betroffene Kriterien", ", ".join(covered))]
+        if self.raw_capture and self.raw_capture.get("url"):
+            evidence.append(EvidenceItem("Erfasste URL", str(self.raw_capture["url"])))
+        for report in reports:
+            evidence.append(EvidenceItem(report.criterion.code, f"{report.finding.status} — {report.finding.note or '—'}"))
         return evidence
 
     @property
@@ -415,9 +435,8 @@ def _evidence_for_finding(
             snippets = (document_capture.get("evidence") or {}).get("RDS-CUC-377") if isinstance(document_capture, dict) else None
             if snippets:
                 evidence.append(EvidenceItem("Produkt-/Dokument-Evidenz RDS-CUC-377", " | ".join(str(snippet) for snippet in snippets[:3])))
-    if finding.criterion in {"ITS-ENC-359", "ITS-ENC-360"}:
-        if raw_capture.get("url"):
-            evidence.append(EvidenceItem("Erfasste URL", str(raw_capture["url"])))
+    if finding.criterion in HTTPS_TRANSPORT_SECTION_CRITERIA:
+        evidence.append(EvidenceItem("HTTPS/TLS-Bewertung", "Details siehe gemeinsamen Abschnitt vor der Kriterienbewertung."))
     if finding.criterion in {"RDS-IPF-364", "RDS-IPF-366"}:
         ipf = raw_capture.get("ipf") or {}
         if ipf.get("impressum_url"):

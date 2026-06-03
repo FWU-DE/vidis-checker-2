@@ -251,6 +251,54 @@ def test_generate_pdf_writes_non_empty_report(tmp_path: Path) -> None:
     assert output.stat().st_size > 1000
 
 
+def test_generate_markdown_groups_https_transport_evidence_once(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="transport",
+        findings=[
+            CheckFinding(criterion="ITS-ENC-359", status="PASS", note="HTTPS 200 at https://example.test/; HTTP 301 Location=https://example.test/"),
+            CheckFinding(criterion="ITS-ENC-360", status="PASS", note="HTTP redirects to HTTPS: HTTP 301 Location=https://example.test/"),
+            CheckFinding(criterion="ITS-ENC-361", status="PASS", note="Obsolete protocols rejected: SSLv3, TLSv1.0, TLSv1.1"),
+        ],
+    )
+    output = tmp_path / "report.md"
+
+    generate_markdown(result, output, raw_capture={"url": "https://example.test"})
+
+    text = output.read_text(encoding="utf-8")
+    assert text.count("## Gemeinsame HTTPS- und TLS-Bewertung") == 1
+    shared_section = text.split("## Gemeinsame HTTPS- und TLS-Bewertung", 1)[1].split("## Kriterienbewertung", 1)[0]
+    criteria_section = text.split("## Kriterienbewertung", 1)[1]
+    assert "| Betroffene Kriterien | ITS-ENC-359, ITS-ENC-360, ITS-ENC-361 |" in shared_section
+    assert "| ITS-ENC-359 | PASS — HTTPS 200 at https://example.test/; HTTP 301 Location=https://example.test/ |" in shared_section
+    assert "| ITS-ENC-360 | PASS — HTTP redirects to HTTPS: HTTP 301 Location=https://example.test/ |" in shared_section
+    assert "| ITS-ENC-361 | PASS — Obsolete protocols rejected: SSLv3, TLSv1.0, TLSv1.1 |" in shared_section
+    assert "| HTTPS/TLS-Bewertung | Details siehe gemeinsamen Abschnitt" in text_section(criteria_section, "### ITS-ENC-359:")
+    assert "| HTTPS/TLS-Bewertung | Details siehe gemeinsamen Abschnitt" in text_section(criteria_section, "### ITS-ENC-360:")
+    assert "| HTTPS/TLS-Bewertung | Details siehe gemeinsamen Abschnitt" in text_section(criteria_section, "### ITS-ENC-361:")
+    assert "| ITS-ENC-359 | PASS" not in text_section(criteria_section, "### ITS-ENC-359:")
+
+
+def test_generate_pdf_groups_https_transport_evidence_once(tmp_path: Path) -> None:
+    result = JobResult(
+        job_id="transport-pdf",
+        findings=[
+            CheckFinding(criterion="ITS-ENC-359", status="PASS", note="HTTPS 200 at https://example.test/; HTTP 301 Location=https://example.test/"),
+            CheckFinding(criterion="ITS-ENC-360", status="PASS", note="HTTP redirects to HTTPS: HTTP 301 Location=https://example.test/"),
+            CheckFinding(criterion="ITS-ENC-361", status="PASS", note="Obsolete protocols rejected: SSLv3, TLSv1.0, TLSv1.1"),
+        ],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(result, output, raw_capture={"url": "https://example.test"})
+
+    text = subprocess.run(["pdftotext", str(output), "-"], check=True, text=True, capture_output=True).stdout
+    assert text.count("Gemeinsame HTTPS- und TLS-Bewertung") == 1
+    assert "Betroffene Kriterien" in text
+    assert "ITS-ENC-359, ITS-ENC-360, ITS-ENC-361" in text
+    assert "HTTPS 200 at https://example.test/" in text
+    assert "Obsolete protocols rejected" in text
+
+
 def test_generate_pdf_groups_cookie_and_browser_storage_evidence_once(tmp_path: Path) -> None:
     result = JobResult(
         job_id="unit",
