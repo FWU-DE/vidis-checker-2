@@ -234,6 +234,58 @@ def test_generate_pdf_groups_cookie_and_browser_storage_evidence_once(tmp_path: 
     assert "secret" not in text
 
 
+def test_generate_pdf_uses_thumbnail_grid_for_screenshot_overview(tmp_path: Path) -> None:
+    first = tmp_path / "page-1.png"
+    second = tmp_path / "page-2.png"
+    first.write_bytes(PNG_1X1)
+    second.write_bytes(PNG_1X1)
+    result = JobResult(
+        job_id="screenshot-thumbnails",
+        findings=[CheckFinding(criterion="RDS-IPF-364", status="MANUELL", note="Screenshot prüfen")],
+    )
+    output = tmp_path / "report.pdf"
+
+    generate_pdf(
+        result,
+        output,
+        raw_capture={
+            "url": "https://example.test",
+            "screenshots": [
+                {
+                    "label": "Startseite",
+                    "url": "https://example.test/",
+                    "filename": "page-1.png",
+                    "path": str(first),
+                    "local_only": False,
+                },
+                {
+                    "label": "Datenschutz",
+                    "url": "https://example.test/datenschutz",
+                    "filename": "page-2.png",
+                    "path": str(second),
+                    "local_only": False,
+                },
+                {
+                    "label": "Login intern",
+                    "url": "https://example.test/app",
+                    "filename": "auth.png",
+                    "path": str(second),
+                    "local_only": True,
+                },
+            ],
+        },
+    )
+
+    text = subprocess.run(["pdftotext", str(output), "-"], check=True, text=True, capture_output=True).stdout
+    assert "Screenshot-Thumbnail-Übersicht" in text
+    assert "Miniaturansichten der öffentlichen Screenshot-Nachweise" in text
+    thumbnail_section = text.split("Screenshot-Thumbnail-Übersicht", 1)[1].split("Kriterienbewertung", 1)[0]
+    assert "Startseite" in thumbnail_section
+    assert "Datenschutz" in thumbnail_section
+    assert "Login intern" not in thumbnail_section
+    assert output.read_bytes().count(b"/Image") >= 3
+
+
 def test_generate_pdf_embeds_public_screenshot_and_shortens_noisy_evidence(tmp_path: Path) -> None:
     screenshot = tmp_path / "page-1.png"
     screenshot.write_bytes(PNG_1X1)
