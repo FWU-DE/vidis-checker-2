@@ -93,8 +93,9 @@ def _append_ai_model_metadata(raw_capture: dict[str, Any] | None, ai_model: str 
     return raw_capture
 
 
-def _agentic_report_capture(agent_capture: dict[str, Any], agent_dir: Path, result_dir: Path) -> dict[str, Any]:
-    screenshots = []
+def _merge_agentic_report_capture(raw_capture: dict[str, Any] | None, agent_capture: dict[str, Any], agent_dir: Path, result_dir: Path) -> dict[str, Any]:
+    merged = dict(raw_capture or {})
+    screenshots = list(merged.get("screenshots") or [])
     steps = [step for step in agent_capture.get("steps") or [] if isinstance(step, dict)]
     artifact_screenshots = agent_capture.get("artifacts", {}).get("screenshots") if isinstance(agent_capture.get("artifacts"), dict) else []
     for index, rel in enumerate(artifact_screenshots or []):
@@ -111,16 +112,23 @@ def _agentic_report_capture(agent_capture: dict[str, Any], agent_dir: Path, resu
                 "authenticated": True,
             }
         )
-    return {
-        "url": agent_capture.get("base_url"),
-        "cookies": agent_capture.get("cookies") or [],
-        "requests": agent_capture.get("requests") or [],
-        "local_storage": agent_capture.get("local_storage") or {},
-        "session_storage": agent_capture.get("session_storage") or {},
-        "screenshots": screenshots,
-        "agentic": agent_capture,
-        "ipf": _agentic_ipf_evidence(agent_capture),
-    }
+    merged.setdefault("url", agent_capture.get("base_url"))
+    merged["cookies"] = agent_capture.get("cookies") or merged.get("cookies") or []
+    merged["requests"] = list(merged.get("requests") or []) + list(agent_capture.get("requests") or [])
+    merged["local_storage"] = {**(merged.get("local_storage") or {}), **(agent_capture.get("local_storage") or {})}
+    merged["session_storage"] = {**(merged.get("session_storage") or {}), **(agent_capture.get("session_storage") or {})}
+    merged["screenshots"] = screenshots
+    merged["agentic"] = agent_capture
+    site_ipf = merged.get("ipf") or {}
+    agent_ipf = _agentic_ipf_evidence(agent_capture)
+    if isinstance(site_ipf, dict):
+        merged["ipf"] = {**site_ipf, "agentic": agent_ipf}
+        for key, value in agent_ipf.items():
+            if key not in merged["ipf"] or not merged["ipf"].get(key):
+                merged["ipf"][key] = value
+    else:
+        merged["ipf"] = dict(agent_ipf)
+    return merged
 
 
 def _agentic_step_for_artifact(steps: list[dict[str, Any]], index: int) -> dict[str, Any]:
@@ -243,7 +251,7 @@ def check(
     document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
     privacy_text_for_cookies = _extract_privacy_text_for_cookie_descriptions(document_inputs) if document_inputs else ""
     # Browser capture for cookie/storage-related VIDIS criteria.
-    if url and not agentic:
+    if url:
         outdir = Path("results") / cfg.job_id
         try:
             cap = crawl(url, pages=pages, headless=True, screenshot_dir=outdir / "screenshots")
@@ -367,12 +375,16 @@ def check(
             instructions=agent_instructions or [],
         )
         agent_capture = write_agentic_artifacts(agent_result, outdir / "agent", [username, password])
-        raw_capture = _agentic_report_capture(agent_capture, outdir / "agent", outdir)
+        raw_capture = _merge_agentic_report_capture(raw_capture, agent_capture, outdir / "agent", outdir)
         by_criterion = {finding.criterion: finding for finding in findings}
         for finding in _agentic_signal_findings(agent_capture, audience):
-            by_criterion[finding.criterion] = finding
+            existing = by_criterion.get(finding.criterion)
+            if existing is None or existing.status == "MANUELL":
+                by_criterion[finding.criterion] = finding
         for finding in _agentic_ipf_findings(agent_capture):
-            by_criterion[finding.criterion] = finding
+            existing = by_criterion.get(finding.criterion)
+            if existing is None or existing.status in {"MANUELL", "FAIL"}:
+                by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
     wired = {f.criterion for f in findings}
     for k in crit.items.keys():

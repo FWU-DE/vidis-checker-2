@@ -9,7 +9,10 @@ from typer.testing import CliRunner
 
 from vidis_compliance import server
 from vidis_compliance.cli import app
+from vidis_compliance.models import CheckFinding
+from vidis_compliance.checks.site.ipf import IpfSiteAnalysis, LegalPageResult
 from vidis_compliance.sources.agentic import AgenticCrawlResult, redacted_data
+from vidis_compliance.sources.site.crawl import PageCapture
 
 PNG_1X1 = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -56,11 +59,42 @@ class FakeAgentRunner:
         )
 
 
+def _fake_site_capture(url: str) -> PageCapture:
+    return PageCapture(
+        url=url,
+        cookies=[],
+        local_storage={},
+        session_storage={},
+        scripts=[],
+        requests=[],
+        resources=[],
+        links=[],
+        visible_text=["Datenschutzerklärung und Impressum vorhanden."],
+        browser_signals={"fingerprinting": [], "device_storage": []},
+        visited_urls=[url],
+        screenshots=[],
+    )
+
+
+def _patch_site_crawl(monkeypatch, module_path: str = "vidis_compliance.cli") -> None:
+    monkeypatch.setattr(f"{module_path}.crawl", lambda url, **_kwargs: _fake_site_capture(url))
+    monkeypatch.setattr(f"{module_path}.check_site_transport", lambda _url: [])
+    empty_ipf = IpfSiteAnalysis(
+        source_url="https://app.example.test",
+        visited_urls=["https://app.example.test"],
+        impressum=LegalPageResult(kind="impressum"),
+        privacy=LegalPageResult(kind="privacy"),
+    )
+    monkeypatch.setattr(f"{module_path}.analyze_ipf_site", lambda _url: empty_ipf)
+    monkeypatch.setattr(f"{module_path}.findings_from_ipf_analysis", lambda _analysis: [])
+
+
 def test_cli_agentic_scan_writes_redacted_artifacts(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("VIDIS_AGENT_USERNAME", "env-user")
     monkeypatch.setenv("VIDIS_AGENT_PASSWORD", "env-secret")
     monkeypatch.setattr("vidis_compliance.cli.DefaultAgenticRunner", lambda: FakeAgentRunner())
+    _patch_site_crawl(monkeypatch)
 
     result = CliRunner().invoke(
         app,
@@ -119,9 +153,73 @@ def test_cli_agentic_scan_writes_redacted_artifacts(tmp_path: Path, monkeypatch)
     assert findings["RDS-CUC-371"]["status"] in {"PASS", "FAIL", "MANUELL"}
     assert "authentifizierten Agent-Crawl" in findings["RDS-CUC-371"]["note"]
     assert findings["RDS-CUC-374"]["status"] in {"PASS", "MANUELL"}
-    assert "authentifiziertem Agent-Crawl" in findings["RDS-CUC-374"]["note"]
+    assert findings["RDS-CUC-374"]["status"] == "PASS"
+    assert "Agent-Crawl" not in findings["RDS-CUC-374"]["note"]
     assert findings["RDS-IPF-364"]["status"] == "MANUELL"
     assert "Impressum" in findings["RDS-IPF-364"]["note"]
+
+
+def test_cli_agentic_combines_normal_site_checks_with_agent_evidence(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VIDIS_AGENT_USERNAME", "env-user")
+    monkeypatch.setenv("VIDIS_AGENT_PASSWORD", "env-secret")
+    monkeypatch.setattr("vidis_compliance.cli.DefaultAgenticRunner", lambda: FakeAgentRunner())
+    crawl_calls: list[str] = []
+
+    def fake_crawl(url: str, **_kwargs):
+        crawl_calls.append(url)
+        return PageCapture(
+            url=url,
+            cookies=[],
+            local_storage={},
+            session_storage={},
+            scripts=[],
+            requests=[],
+            resources=[],
+            links=[],
+            visible_text=["Datenschutzerklärung und Impressum vorhanden."],
+            browser_signals={"fingerprinting": [], "device_storage": []},
+            visited_urls=[url],
+            screenshots=[],
+        )
+
+    monkeypatch.setattr("vidis_compliance.cli.crawl", fake_crawl)
+    monkeypatch.setattr("vidis_compliance.cli.check_site_transport", lambda _url: [CheckFinding(criterion="ITS-ENC-359", status="PASS", note="TLS ok")])
+    empty_ipf = IpfSiteAnalysis(
+        source_url="https://app.example.test",
+        visited_urls=["https://app.example.test"],
+        impressum=LegalPageResult(kind="impressum"),
+        privacy=LegalPageResult(kind="privacy"),
+    )
+    monkeypatch.setattr("vidis_compliance.cli.analyze_ipf_site", lambda _url: empty_ipf)
+    monkeypatch.setattr("vidis_compliance.cli.findings_from_ipf_analysis", lambda _analysis: [])
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "check",
+            "--url",
+            "https://app.example.test",
+            "--output",
+            "agent-combined-job",
+            "--agentic",
+            "--agent-task",
+            "legal",
+            "--pages",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert crawl_calls == ["https://app.example.test"]
+    result_json = json.loads((tmp_path / "results" / "agent-combined-job" / "result.json").read_text(encoding="utf-8"))
+    findings = {finding["criterion"]: finding for finding in result_json["findings"]}
+    assert findings["ITS-ENC-359"]["status"] == "PASS"
+    assert findings["RDS-WER-384"]["status"] == "PASS"
+    assert findings["RDS-IPF-364"]["status"] == "MANUELL"
+    capture = json.loads((tmp_path / "results" / "agent-combined-job" / "capture.json").read_text(encoding="utf-8"))
+    assert capture["url"] == "https://app.example.test"
+    assert capture["agentic"]["visited_urls"][-1].endswith("/dashboard")
 
 
 def test_agentic_markdown_and_pdf_include_agent_screenshot_artifacts(tmp_path: Path, monkeypatch) -> None:
@@ -129,6 +227,7 @@ def test_agentic_markdown_and_pdf_include_agent_screenshot_artifacts(tmp_path: P
     monkeypatch.setenv("VIDIS_AGENT_USERNAME", "env-user")
     monkeypatch.setenv("VIDIS_AGENT_PASSWORD", "env-secret")
     monkeypatch.setattr("vidis_compliance.cli.DefaultAgenticRunner", lambda: FakeAgentRunner())
+    _patch_site_crawl(monkeypatch)
 
     result = CliRunner().invoke(
         app,
@@ -163,6 +262,8 @@ def test_api_agentic_job_exposes_safe_agent_artifact(tmp_path: Path, monkeypatch
     monkeypatch.setenv("VIDIS_RESULTS_DIR", str(tmp_path / "results"))
     monkeypatch.setenv("VIDIS_AGENT_PASSWORD", "api-secret")
     monkeypatch.setattr(server.cli_module, "DefaultAgenticRunner", lambda: FakeAgentRunner())
+    monkeypatch.setattr(server.cli_module, "crawl", lambda url, **_kwargs: _fake_site_capture(url))
+    monkeypatch.setattr(server.cli_module, "check_site_transport", lambda _url: [])
     client = TestClient(server.app)
 
     created = client.post(
