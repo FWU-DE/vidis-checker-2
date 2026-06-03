@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -9,6 +10,13 @@ from typer.testing import CliRunner
 from vidis_compliance import server
 from vidis_compliance.cli import app
 from vidis_compliance.sources.agentic import AgenticCrawlResult, redacted_data
+
+PNG_1X1 = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
+    b"\x00\x00\x0cIDAT\x08\xd7c\xf8\xff\xff?\x00\x05\xfe\x02"
+    b"\xfeA\xe2!\xbc\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
 class FakeAgentRunner:
@@ -19,7 +27,8 @@ class FakeAgentRunner:
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "screenshots").mkdir()
         (output_dir / "pdfs").mkdir()
-        (output_dir / "screenshots" / "legal-1.png").write_bytes(b"fake png")
+        (output_dir / "screenshots" / "legal-1.png").write_bytes(PNG_1X1)
+        (output_dir / "screenshots" / "impressum-menu.png").write_bytes(PNG_1X1)
         (output_dir / "pdfs" / "legal-1.pdf").write_bytes(b"%PDF fake")
         return AgenticCrawlResult(
             base_url=base_url,
@@ -32,7 +41,7 @@ class FakeAgentRunner:
             session_storage={},
             requests=[{"url": f"{base_url.rstrip('/')}/api/me", "method": "GET"}],
             artifacts={
-                "screenshots": ["screenshots/legal-1.png"],
+                "screenshots": ["screenshots/legal-1.png", "screenshots/impressum-menu.png"],
                 "pdfs": ["pdfs/legal-1.pdf"],
             },
             steps=[
@@ -97,6 +106,57 @@ def test_cli_agentic_scan_writes_redacted_artifacts(tmp_path: Path, monkeypatch)
     assert FakeAgentRunner.last_call["vidis_login_label"] == "Login über Schulportal"
     assert FakeAgentRunner.last_call["instructions"] == ["Gehe auf Assistenten und prüfe die Übersicht."]
     assert summary["visited_urls"][-1].endswith("/dashboard")
+
+    root_capture = json.loads((tmp_path / "results" / "agent-job" / "capture.json").read_text(encoding="utf-8"))
+    assert [s["filename"] for s in root_capture["screenshots"]] == ["legal-1.png", "impressum-menu.png"]
+    assert all(Path(s["path"]).exists() for s in root_capture["screenshots"])
+    assert all(s["local_only"] is False for s in root_capture["screenshots"])
+    assert root_capture["agentic"]["visited_urls"][-1].endswith("/dashboard")
+    assert root_capture["ipf"]["impressum_candidates"]
+    assert any("impressum" in candidate.lower() for candidate in root_capture["ipf"]["impressum_candidates"])
+    result_json = json.loads((tmp_path / "results" / "agent-job" / "result.json").read_text(encoding="utf-8"))
+    findings = {finding["criterion"]: finding for finding in result_json["findings"]}
+    assert findings["RDS-CUC-371"]["status"] in {"PASS", "FAIL", "MANUELL"}
+    assert "authentifizierten Agent-Crawl" in findings["RDS-CUC-371"]["note"]
+    assert findings["RDS-CUC-374"]["status"] in {"PASS", "MANUELL"}
+    assert "authentifiziertem Agent-Crawl" in findings["RDS-CUC-374"]["note"]
+    assert findings["RDS-IPF-364"]["status"] == "MANUELL"
+    assert "Impressum" in findings["RDS-IPF-364"]["note"]
+
+
+def test_agentic_markdown_and_pdf_include_agent_screenshot_artifacts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VIDIS_AGENT_USERNAME", "env-user")
+    monkeypatch.setenv("VIDIS_AGENT_PASSWORD", "env-secret")
+    monkeypatch.setattr("vidis_compliance.cli.DefaultAgenticRunner", lambda: FakeAgentRunner())
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "check",
+            "--url",
+            "https://app.example.test",
+            "--output",
+            "agent-report-job",
+            "--agentic",
+            "--pages",
+            "1",
+            "--md",
+            "results/agent-report-job/report.md",
+            "--pdf",
+            "results/agent-report-job/report.pdf",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report_md = tmp_path / "results" / "agent-report-job" / "report.md"
+    report_pdf = tmp_path / "results" / "agent-report-job" / "report.pdf"
+    assert "Screenshot-Nachweise" in report_md.read_text(encoding="utf-8")
+    extracted = subprocess.run(["pdftotext", str(report_pdf), "-"], check=True, text=True, capture_output=True).stdout
+    images = subprocess.run(["pdfimages", "-list", str(report_pdf)], check=True, text=True, capture_output=True).stdout
+    assert "Screenshot-Nachweise" in extracted
+    assert "Screenshot-Thumbnail" in extracted
+    assert "image" in images
 
 
 def test_api_agentic_job_exposes_safe_agent_artifact(tmp_path: Path, monkeypatch) -> None:
@@ -230,10 +290,17 @@ class FakeInternalLinksPage:
             FakeCountLocator(1, text="Assistenten", href="https://app.example.test/assistants", page=self),
             FakeCountLocator(1, text="Lernszenarien", href="https://app.example.test/", page=self),
             FakeCountLocator(1, text="Dialogpartner", href="https://app.example.test/", page=self),
+            FakeCountLocator(1, text="Profil", href="https://app.example.test/", page=self),
+            FakeCountLocator(1, text="Impressum", href="https://app.example.test/impressum", page=self),
             FakeCountLocator(1, text="Datenschutz", href="https://app.example.test/privacy", page=self),
             FakeCountLocator(1, text="Extern", href="https://external.example.test/", page=self),
         ]
-        self.text_targets = {"Assistenten": "https://app.example.test/assistants"}
+        self.text_targets = {
+            "Assistenten": "https://app.example.test/assistants",
+            "Profil": "https://app.example.test/",
+            "Impressum": "https://app.example.test/impressum",
+            "Datenschutz": "https://app.example.test/privacy",
+        }
 
     def locator(self, selector: str):
         if selector == "a[href]":
@@ -306,6 +373,20 @@ def test_agentic_click_paths_keep_distinct_labels_on_same_spa_url() -> None:
     assert "Lernszenarien" in labels
     assert "Dialogpartner" in labels
     assert len(result.visited_urls) == 5
+
+
+def test_agentic_legal_task_prioritizes_profile_menu_legal_paths() -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeInternalLinksPage()
+    result = AgenticCrawlResult(base_url="https://app.example.test/login", persona="Lehrkraft", task_types=["legal"])
+
+    DefaultAgenticRunner()._browse_click_paths(page, "https://app.example.test/login", result, target_pages=4, instructions=["Öffne Profil", "Klicke Impressum", "Klicke Datenschutz"])
+
+    labels = [step.get("label") for step in result.steps]
+    assert labels[:3] == ["Profil", "Impressum", "Datenschutz"]
+    assert "https://app.example.test/impressum" in result.visited_urls
+    assert "https://app.example.test/privacy" in result.visited_urls
 
 
 def test_agentic_click_paths_ignore_pre_login_urls_for_page_limit() -> None:
