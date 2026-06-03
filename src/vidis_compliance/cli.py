@@ -112,6 +112,7 @@ def check(
     agent_username: str | None = typer.Option(None, "--agent-username", envvar="VIDIS_AGENT_USERNAME", help="Login-Benutzername; alternativ VIDIS_AGENT_USERNAME."),
     agent_password: str | None = typer.Option(None, "--agent-password", envvar="VIDIS_AGENT_PASSWORD", help="Login-Passwort; alternativ VIDIS_AGENT_PASSWORD."),
     agent_vidis_portal: str | None = typer.Option(None, "--agent-vidis-portal", envvar="VIDIS_AGENT_VIDIS_PORTAL", help="VIDIS-Landesportal/Schulportal vor Benutzername/Passwort auswählen, z. B. 'Test Landesportal'."),
+    agent_vidis_login_label: str | None = typer.Option(None, "--agent-vidis-login-label", envvar="VIDIS_AGENT_VIDIS_LOGIN_LABEL", help="Optionaler Text des VIDIS-/SSO-Login-Buttons, falls er im Testobjekt anders heißt."),
     lighthouse: bool = typer.Option(False, "--lighthouse", help="Optional Lighthouse JSON/HTML-Audit als Report-Artefakt erzeugen."),
     webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
     ai_model: str | None = typer.Option(None, "--ai-model", help="Verwendetes KI-Modell für KI-gestützte Bewertungen, z. B. openai:gpt-4.1-mini."),
@@ -248,6 +249,7 @@ def check(
             persona=agent_persona or audience,
             pages=pages,
             vidis_portal=agent_vidis_portal,
+            vidis_login_label=agent_vidis_login_label,
         )
         agent_capture = write_agentic_artifacts(agent_result, outdir / "agent", [username, password])
     wired = {f.criterion for f in findings}

@@ -14,8 +14,8 @@ from vidis_compliance.sources.agentic import AgenticCrawlResult, redacted_data
 class FakeAgentRunner:
     last_call: dict[str, object] = {}
 
-    def run(self, *, base_url: str, task_types: list[str], username: str | None, password: str | None, output_dir: Path, persona: str, pages: int, vidis_portal: str | None = None) -> AgenticCrawlResult:
-        FakeAgentRunner.last_call = {"vidis_portal": vidis_portal, "username": username, "password": password}
+    def run(self, *, base_url: str, task_types: list[str], username: str | None, password: str | None, output_dir: Path, persona: str, pages: int, vidis_portal: str | None = None, vidis_login_label: str | None = None) -> AgenticCrawlResult:
+        FakeAgentRunner.last_call = {"vidis_portal": vidis_portal, "vidis_login_label": vidis_login_label, "username": username, "password": password}
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "screenshots").mkdir()
         (output_dir / "pdfs").mkdir()
@@ -70,6 +70,8 @@ def test_cli_agentic_scan_writes_redacted_artifacts(tmp_path: Path, monkeypatch)
             "SuS",
             "--agent-vidis-portal",
             "Test Landesportal",
+            "--agent-vidis-login-label",
+            "Login über Schulportal",
             "--pages",
             "1",
         ],
@@ -90,6 +92,7 @@ def test_cli_agentic_scan_writes_redacted_artifacts(tmp_path: Path, monkeypatch)
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["task_types"] == ["legal", "student"]
     assert FakeAgentRunner.last_call["vidis_portal"] == "Test Landesportal"
+    assert FakeAgentRunner.last_call["vidis_login_label"] == "Login über Schulportal"
     assert summary["visited_urls"][-1].endswith("/dashboard")
 
 
@@ -150,10 +153,11 @@ class FakeCountLocator:
 
 
 class FakeVidisPage:
-    def __init__(self):
+    def __init__(self, vidis_login_label: str = "Mit VIDIS einloggen"):
         self.url = "https://app.example.test/login"
         self.calls: list[tuple[str, str | None]] = []
         self.selected_portal: str | None = None
+        self.vidis_login_label = vidis_login_label
 
     def locator(self, selector: str):
         self.calls.append(("locator", selector))
@@ -168,6 +172,8 @@ class FakeVidisPage:
     def get_by_role(self, role: str, name=None):
         label = getattr(name, "pattern", name)
         self.calls.append(("role", f"{role}:{label}"))
+        if role in {"button", "link"} and label and any(token in str(label) for token in ["VIDIS", "Schulportal", "SSO"]):
+            return FakeCountLocator(1 if self.vidis_login_label in str(label) else 0)
         return FakeCountLocator(1)
 
     def wait_for_load_state(self, *_args, **_kwargs):
@@ -207,6 +213,26 @@ def test_agentic_task_stays_on_authenticated_page_when_keyword_is_absent() -> No
     assert result.visited_urls == ["https://app.example.test/"]
     assert page.goto_calls == []
     assert result.actions[-1] == {"task": "teacher", "action": "visit", "url": "https://app.example.test/"}
+
+
+def test_agentic_login_uses_configured_vidis_login_label_before_auto_detection() -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeVidisPage(vidis_login_label="Login über Schulportal")
+    result = AgenticCrawlResult(base_url="https://app.example.test/login", persona="Lehrkraft", task_types=[])
+
+    DefaultAgenticRunner()._try_login(
+        page,
+        username="teacher",
+        password="secret",
+        result=result,
+        vidis_portal="Test Landesportal",
+        vidis_login_label="Login über Schulportal",
+    )
+
+    first_button_call = next(call for call in page.calls if call[0] == "role" and str(call[1]).startswith("button:"))
+    assert "Login über Schulportal" in str(first_button_call[1])
+    assert result.steps[1]["vidis_login_label"] == "Login über Schulportal"
 
 
 def test_agentic_login_selects_configured_vidis_portal_before_credentials() -> None:
