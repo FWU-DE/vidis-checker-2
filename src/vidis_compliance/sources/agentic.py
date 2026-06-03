@@ -70,34 +70,20 @@ class DefaultAgenticRunner:
                     self._try_login(page, username, password, result, vidis_portal=vidis_portal, vidis_login_label=vidis_login_label)
                 target_pages = max(pages, 1)
                 navigation_instructions = self._navigation_instructions(task_types, instructions)
-                self._browse_click_paths(page, base_url, result, target_pages=target_pages, instructions=navigation_instructions, reset_visited=True)
+                self._browse_click_paths(
+                    page,
+                    base_url,
+                    result,
+                    target_pages=target_pages,
+                    instructions=navigation_instructions,
+                    reset_visited=True,
+                    capture_step=lambda step: self._capture_current_step_artifact(page, output_dir, result, step, target_pages=target_pages),
+                )
                 if not result.visited_urls:
                     result.visited_urls.append(str(page.url))
                     result.actions.append({"action": "visit", "url": str(page.url)})
                     result.steps.append({"action": "visit", "url": str(page.url), "note": "no click paths found"})
-                artifact_entries = [step for step in result.steps if step.get("url")][-target_pages:]
-                for index, step in enumerate(artifact_entries, start=1):
-                    label = str(step.get("task") or step.get("instruction") or step.get("label") or step.get("action") or "page")
-                    slug = self._slug(label)[:40] or "page"
-                    screenshot_rel = f"screenshots/{index:02d}-{slug}.png"
-                    pdf_rel = f"pdfs/{index:02d}-{slug}.pdf"
-                    try:
-                        target_url = str(step.get("url") or page.url)
-                        if target_url and self._canonical_url(str(page.url)) != self._canonical_url(target_url):
-                            page.goto(target_url, wait_until="networkidle", timeout=10_000)
-                    except Exception:
-                        try:
-                            page.goto(str(step.get("url") or page.url), wait_until="domcontentloaded", timeout=10_000)
-                        except Exception:
-                            pass
-                    page.screenshot(path=str(output_dir / screenshot_rel), full_page=True)
-                    try:
-                        page.pdf(path=str(output_dir / pdf_rel), print_background=True)
-                    except Exception:
-                        pdf_rel = ""
-                    result.artifacts.setdefault("screenshots", []).append(screenshot_rel)
-                    if pdf_rel:
-                        result.artifacts.setdefault("pdfs", []).append(pdf_rel)
+                    self._capture_current_step_artifact(page, output_dir, result, result.steps[-1], target_pages=target_pages)
                 result.cookies = context.cookies()
                 result.local_storage = _safe_eval_dict(page, "() => Object.fromEntries(Object.entries(localStorage))")
                 result.session_storage = _safe_eval_dict(page, "() => Object.fromEntries(Object.entries(sessionStorage))")
@@ -115,6 +101,23 @@ class DefaultAgenticRunner:
         result.visited_urls.append(current_url)
         result.actions.append({"action": action, "url": current_url})
         result.steps.append({"action": action, "url": current_url})
+
+    def _capture_current_step_artifact(self, page: Any, output_dir: Path, result: AgenticCrawlResult, step: dict[str, Any], *, target_pages: int) -> None:
+        if len(result.artifacts.get("screenshots", [])) >= target_pages:
+            return
+        index = len(result.artifacts.get("screenshots", [])) + 1
+        label = str(step.get("task") or step.get("instruction") or step.get("label") or step.get("action") or "page")
+        slug = self._slug(label)[:40] or "page"
+        screenshot_rel = f"screenshots/{index:02d}-{slug}.png"
+        pdf_rel = f"pdfs/{index:02d}-{slug}.pdf"
+        page.screenshot(path=str(output_dir / screenshot_rel), full_page=True)
+        try:
+            page.pdf(path=str(output_dir / pdf_rel), print_background=True)
+        except Exception:
+            pdf_rel = ""
+        result.artifacts.setdefault("screenshots", []).append(screenshot_rel)
+        if pdf_rel:
+            result.artifacts.setdefault("pdfs", []).append(pdf_rel)
 
     def _navigation_instructions(self, task_types: list[str], instructions: list[str] | None) -> list[str]:
         result: list[str] = []
@@ -351,6 +354,7 @@ class DefaultAgenticRunner:
         target_pages: int,
         instructions: list[str] | None = None,
         reset_visited: bool = False,
+        capture_step: Any | None = None,
     ) -> None:
         if reset_visited:
             result.visited_urls.clear()
@@ -370,7 +374,10 @@ class DefaultAgenticRunner:
                 seen_clicks.add(click_key)
                 result.visited_urls.append(current_url)
                 result.actions.append({"action": "instruction_click", "url": current_url, "label": label, "instruction": instruction})
-                result.steps.append({"action": "instruction_click", "url": current_url, "label": label, "instruction": instruction})
+                step = {"action": "instruction_click", "url": current_url, "label": label, "instruction": instruction}
+                result.steps.append(step)
+                if capture_step:
+                    capture_step(step)
         if str(page.url) and len(result.visited_urls) < target_pages:
             current = self._canonical_url(str(page.url))
             if current not in seen:
@@ -378,7 +385,10 @@ class DefaultAgenticRunner:
                 seen_clicks.add(self._click_key(current, "authenticated start"))
                 result.visited_urls.append(str(page.url))
                 result.actions.append({"action": "click_path", "url": str(page.url), "label": "authenticated start"})
-                result.steps.append({"action": "click_path", "url": str(page.url), "label": "authenticated start"})
+                step = {"action": "click_path", "url": str(page.url), "label": "authenticated start"}
+                result.steps.append(step)
+                if capture_step:
+                    capture_step(step)
         attempts = 0
         while len(result.visited_urls) < target_pages and attempts < target_pages * 4:
             attempts += 1
@@ -407,25 +417,30 @@ class DefaultAgenticRunner:
             seen_clicks.add(click_key)
             result.visited_urls.append(current_url)
             result.actions.append({"action": "click_path", "url": current_url, "label": candidate["label"], "source_url": candidate["url"]})
-            result.steps.append({"action": "click_path", "url": current_url, "label": candidate["label"], "source_url": candidate["url"]})
+            step = {"action": "click_path", "url": current_url, "label": candidate["label"], "source_url": candidate["url"]}
+            result.steps.append(step)
+            if capture_step:
+                capture_step(step)
 
     def _next_internal_link(self, page: Any, base_url: str, seen_clicks: set[str]) -> dict[str, str] | None:
         try:
-            links = page.locator("a[href]").all()
+            elements = page.locator("a[href], button, [role='button'], [role='link'], nav a, nav button").all()
         except Exception:
-            links = []
-        base_host = urlparse(base_url).netloc
-        for link in links:
             try:
-                href = link.get_attribute("href")
-                if not href:
-                    continue
-                absolute = urljoin(str(page.url) or base_url, href)
+                elements = page.locator("a[href]").all()
+            except Exception:
+                elements = []
+        base_host = urlparse(base_url).netloc
+        for element in elements:
+            try:
+                href = element.get_attribute("href")
+                label = " ".join(str(element.inner_text(timeout=500) or "").split())
+                absolute = urljoin(str(page.url) or base_url, href) if href else str(page.url) or base_url
                 parsed = urlparse(absolute)
                 if parsed.scheme not in {"http", "https"} or parsed.netloc != base_host:
                     continue
                 canonical = self._canonical_url(absolute)
-                label = " ".join(str(link.inner_text(timeout=500) or "").split()) or parsed.path.rsplit("/", 1)[-1] or "page"
+                label = label or parsed.path.rsplit("/", 1)[-1] or "page"
                 if self._click_key(canonical, label) in seen_clicks:
                     continue
                 if self._is_low_value_link(label, absolute):
