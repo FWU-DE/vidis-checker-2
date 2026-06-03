@@ -51,7 +51,7 @@ Document checks
 - Classification is conservative: PASS requires explicit document evidence, FAIL requires clear contradictions, otherwise the criterion remains MANUELL with an evidence-gap note.
 
 Agentic persona crawl
-- `--agentic` is opt-in and intended for authenticated/walled-garden applications where public deterministic scans miss logged-in legal pages or persona-specific student/teacher areas.
+- `--agentic` is opt-in and intended for authenticated/walled-garden applications where public deterministic scans miss logged-in legal pages or persona-specific student/teacher areas. It does not replace the normal deterministic website checks: cookie/storage/tracking/advertising/youth-protection/HTTPS/legal-page heuristics still run, and authenticated agent evidence is merged on top without downgrading existing PASS/FAIL results to generic MANUELL notes.
 - Supported `--agent-task` values: `legal`, `student`, `teacher`, `register`, `logout`; repeat the flag to choose a subset, otherwise all tasks run.
 - Credentials come from `--agent-username`/`--agent-password` or `VIDIS_AGENT_USERNAME`/`VIDIS_AGENT_PASSWORD`. Passwords and token-like fields are redacted from JSON artifacts and traces.
 - Use `--agent-vidis-portal` or `VIDIS_AGENT_VIDIS_PORTAL` for VIDIS broker flows that require choosing a Landesportal/Schulportal such as `Test Landesportal` before username/password entry. The VIDIS/SSO start button is auto-detected from common labels (`VIDIS`, `Schulportal`, `Landesportal`, `SSO`); set `--agent-vidis-login-label` or `VIDIS_AGENT_VIDIS_LOGIN_LABEL` when a product uses a custom label.

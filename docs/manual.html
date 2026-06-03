@@ -318,7 +318,7 @@ uv run vidis check \
         <li>Passwörter und tokenartige Felder werden aus JSON-Artefakten und Traces entfernt (<code>***REDACTED***</code>).</li>
         <li>Artefakte liegen unter <code>results/&lt;job_id&gt;/agent/</code>: <code>agent_capture.json</code>, <code>step_result.jsonl</code>, <code>screenshots/</code> und <code>pdfs/</code>.</li>
       </ul>
-      <p class="note">Agent-Mode ersetzt die deterministische Prüfung nicht. Er liefert zusätzliche Evidenz für gated App-Bereiche und kann je nach Login/Captcha/SSO menschliche Nachprüfung erfordern.</p>
+      <p class="note">Agent-Mode ersetzt die deterministische Prüfung nicht: Bei <code>--agentic</code> läuft weiterhin der normale Website-Crawl mit den bestehenden Cookie-/Storage-/Tracking-/Werbe-/Jugendschutz-/HTTPS-/Impressum-Heuristiken. Der authentifizierte Agent ergänzt diese Ergebnisse um Login-, Rollen-, SPA-Clickpfad- und Screenshot-Evidenz. Automatische <code>PASS</code>/<code>FAIL</code>-Findings aus dem normalen Prüfpfad werden nicht durch generische Agent-<code>MANUELL</code>-Hinweise überschrieben; Agentic füllt vor allem Lücken und liefert Nachweise für gated App-Bereiche.</p>
     </section>
 
     <section id="reports">

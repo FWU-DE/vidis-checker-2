@@ -298,7 +298,7 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
     document_capture = None
     agent_capture = None
 
-    if cfg.target_url and not request.agentic:
+    if cfg.target_url:
         cap = cli_module.crawl(
             cfg.target_url,
             pages=cfg.pages,
@@ -375,6 +375,17 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
             pages=cfg.pages,
         )
         agent_capture = cli_module.write_agentic_artifacts(agent_result, _job_dir(job_id) / "agent", [username, password])
+        raw_capture = cli_module._merge_agentic_report_capture(raw_capture, agent_capture, _job_dir(job_id) / "agent", _job_dir(job_id))
+        by_criterion = {finding.criterion: finding for finding in findings}
+        for finding in cli_module._agentic_signal_findings(agent_capture, cfg.target_audience):
+            existing = by_criterion.get(finding.criterion)
+            if existing is None or existing.status == "MANUELL":
+                by_criterion[finding.criterion] = finding
+        for finding in cli_module._agentic_ipf_findings(agent_capture):
+            existing = by_criterion.get(finding.criterion)
+            if existing is None or existing.status in {"MANUELL", "FAIL"}:
+                by_criterion[finding.criterion] = finding
+        findings = list(by_criterion.values())
 
     wired = {finding.criterion for finding in findings}
     for code in crit.items.keys():
