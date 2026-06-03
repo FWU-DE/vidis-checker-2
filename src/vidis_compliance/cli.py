@@ -93,6 +93,119 @@ def _append_ai_model_metadata(raw_capture: dict[str, Any] | None, ai_model: str 
     return raw_capture
 
 
+def _agentic_report_capture(agent_capture: dict[str, Any], agent_dir: Path, result_dir: Path) -> dict[str, Any]:
+    screenshots = []
+    steps = [step for step in agent_capture.get("steps") or [] if isinstance(step, dict)]
+    artifact_screenshots = agent_capture.get("artifacts", {}).get("screenshots") if isinstance(agent_capture.get("artifacts"), dict) else []
+    for index, rel in enumerate(artifact_screenshots or []):
+        rel_path = Path(str(rel))
+        full_path = agent_dir / rel_path
+        step = _agentic_step_for_artifact(steps, index)
+        screenshots.append(
+            {
+                "label": str(step.get("label") or step.get("instruction") or step.get("task") or rel_path.stem),
+                "url": str(step.get("url") or ""),
+                "filename": rel_path.name,
+                "path": str(full_path),
+                "local_only": False,
+                "authenticated": True,
+            }
+        )
+    return {
+        "url": agent_capture.get("base_url"),
+        "cookies": agent_capture.get("cookies") or [],
+        "requests": agent_capture.get("requests") or [],
+        "local_storage": agent_capture.get("local_storage") or {},
+        "session_storage": agent_capture.get("session_storage") or {},
+        "screenshots": screenshots,
+        "agentic": agent_capture,
+        "ipf": _agentic_ipf_evidence(agent_capture),
+    }
+
+
+def _agentic_step_for_artifact(steps: list[dict[str, Any]], index: int) -> dict[str, Any]:
+    page_steps = [step for step in steps if step.get("url")]
+    if index < len(page_steps):
+        return page_steps[index]
+    return {}
+
+
+def _agentic_ipf_evidence(agent_capture: dict[str, Any]) -> dict[str, Any]:
+    candidates: list[str] = []
+    for step in agent_capture.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        text = " ".join(str(step.get(key) or "") for key in ("label", "instruction", "task", "url"))
+        lowered = text.lower()
+        if any(token in lowered for token in ("impressum", "datenschutz", "privacy", "profile", "profil", "konto", "menü", "menu")):
+            candidates.append(text.strip())
+    for screenshot in (agent_capture.get("artifacts") or {}).get("screenshots", []) if isinstance(agent_capture.get("artifacts"), dict) else []:
+        text = str(screenshot)
+        lowered = text.lower()
+        if any(token in lowered for token in ("impressum", "datenschutz", "privacy", "profile", "profil", "menu", "menue")):
+            candidates.append(text)
+    deduped = list(dict.fromkeys(candidate for candidate in candidates if candidate))
+    return {
+        "visited_urls": agent_capture.get("visited_urls") or [],
+        "impressum_candidates": deduped,
+        "privacy_candidates": [c for c in deduped if any(token in c.lower() for token in ("datenschutz", "privacy"))],
+        "legal_note": "Agentischer authentifizierter Crawl: Rechtsinformationen können in Profil-/Benutzermenüs versteckt sein; gefundene Kandidaten manuell prüfen.",
+    }
+
+
+def _agentic_ipf_findings(agent_capture: dict[str, Any]) -> list[CheckFinding]:
+    ipf = _agentic_ipf_evidence(agent_capture)
+    candidates = ipf.get("impressum_candidates") or []
+    visited_count = len(agent_capture.get("visited_urls") or [])
+    note = (
+        "Authentifizierter Agent-Crawl hat mögliche Impressum-/Datenschutz-/Rechtsinfo- oder Profilmenü-Kandidaten gefunden: "
+        + "; ".join(str(c) for c in candidates[:6])
+        if candidates
+        else f"Authentifizierter Agent-Crawl hat {visited_count} Seite(n)/Clickpfad(e) erfasst; Impressum/Datenschutzerklärung ggf. im Profilmenü manuell prüfen."
+    )
+    return [
+        CheckFinding(criterion="RDS-IPF-364", status="MANUELL", note=note),
+        CheckFinding(criterion="RDS-IPF-365", status="MANUELL", note=note),
+        CheckFinding(criterion="RDS-IPF-366", status="MANUELL", note=note),
+        CheckFinding(criterion="RDS-IPF-367", status="MANUELL", note=note),
+        CheckFinding(criterion="RDS-DSO-383", status="MANUELL", note="Datenschutzbeauftragten-Kontakt in Datenschutzerklärung bzw. Profil-/Rechtsinfo-Menü manuell prüfen."),
+    ]
+
+
+def _agentic_signal_findings(agent_capture: dict[str, Any], audience: str) -> list[CheckFinding]:
+    page_signals = {
+        "cookies": agent_capture.get("cookies") or [],
+        "scripts": [],
+        "requests": agent_capture.get("requests") or [],
+        "resources": [],
+        "links": [],
+        "visible_text": "",
+        "url": agent_capture.get("base_url"),
+        "browser_signals": {},
+        "local_storage": agent_capture.get("local_storage") or {},
+        "session_storage": agent_capture.get("session_storage") or {},
+    }
+    findings: list[CheckFinding] = []
+    cookie_status, cookie_note = classify_cookies(page_signals, audience)
+    agent_cookie_note = f"Aus authentifizierten Agent-Crawl-Daten: {cookie_note}"
+    findings.append(CheckFinding(criterion="RDS-CUC-371", status=cookie_status, note=agent_cookie_note))
+    findings.append(CheckFinding(criterion="RDS-CUC-372", status=cookie_status, note=agent_cookie_note))
+    findings.append(CheckFinding(criterion="RDS-CUC-373", status="MANUELL", note=f"Aus authentifiziertem Agent-Crawl: {len(page_signals['requests'])} Netzwerkanfragen erfasst; Tracking-Pixel manuell prüfen."))
+    storage_status, storage_note = classify_local_storage(page_signals, audience)
+    findings.append(CheckFinding(criterion="RDS-CUC-374", status=storage_status if storage_status == "PASS" else "MANUELL", note=f"Aus authentifiziertem Agent-Crawl: {storage_note}; sessionStorage- und localStorage-Keys ohne Werte dokumentiert."))
+    findings.append(CheckFinding(criterion="RDS-CUC-375", status="MANUELL", note="Aus authentifiziertem Agent-Crawl: Device-/Browser-Storage-APIs ohne zusätzliche Browser-Signal-Instrumentierung manuell prüfen."))
+    findings.append(CheckFinding(criterion="RDS-CUC-376", status="MANUELL", note="Aus authentifiziertem Agent-Crawl: Fingerprinting-/Entropy-APIs ohne zusätzliche Browser-Signal-Instrumentierung manuell prüfen."))
+    tracking_status, tracking_note = classify_tracking_mechanisms(page_signals, audience)
+    findings.append(CheckFinding(criterion="RDS-CUC-377", status=tracking_status if tracking_status != "PASS" else "MANUELL", note=f"Aus authentifiziertem Agent-Crawl: {tracking_note}"))
+    findings.append(CheckFinding(criterion="RDS-WER-384", status="MANUELL", note="Aus authentifiziertem Agent-Crawl: Werbung/Sponsoring in erfassten Screenshots und Clickpfaden manuell prüfen."))
+    findings.append(CheckFinding(criterion="RDS-WER-385", status="MANUELL", note="Aus authentifiziertem Agent-Crawl: externe Werbelinks in Requests/Screenshots manuell prüfen."))
+    findings.append(CheckFinding(criterion="RDS-VIN-354", status="MANUELL", note="Aus authentifiziertem Agent-Crawl: Jugendmedienschutz anhand erfasster Rollen-/App-Oberflächen manuell prüfen."))
+    _, completeness_note, completeness_evidence = classify_cookie_description_completeness(page_signals, privacy_text=None)
+    findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note=f"Aus authentifiziertem Agent-Crawl: {completeness_note}"))
+    agent_capture["rds_cuc_453"] = completeness_evidence
+    return findings
+
+
 @app.command()
 def check(
     url: str = typer.Option(None, "--url"),
@@ -254,6 +367,13 @@ def check(
             instructions=agent_instructions or [],
         )
         agent_capture = write_agentic_artifacts(agent_result, outdir / "agent", [username, password])
+        raw_capture = _agentic_report_capture(agent_capture, outdir / "agent", outdir)
+        by_criterion = {finding.criterion: finding for finding in findings}
+        for finding in _agentic_signal_findings(agent_capture, audience):
+            by_criterion[finding.criterion] = finding
+        for finding in _agentic_ipf_findings(agent_capture):
+            by_criterion[finding.criterion] = finding
+        findings = list(by_criterion.values())
     wired = {f.criterion for f in findings}
     for k in crit.items.keys():
         if k not in wired:

@@ -40,7 +40,7 @@ API automation
 - `POST /jobs` starts an async check and returns a status URL.
 - `GET /jobs?status=completed&limit=100&offset=0` lists persisted jobs without embedding full result payloads.
 - `GET /jobs/<job_id>` returns job metadata, result, report links, and artifact links.
-- Public screenshot evidence from site crawls is exposed as safe `screenshot_*` artifact links; authenticated/local-only screenshots stay on disk and are only referenced for manual review.
+- Public screenshot evidence from site crawls is exposed as safe `screenshot_*` artifact links; authenticated/local-only screenshots stay on disk for review and are not exported through the API unless explicitly allowed by the artifact policy.
 - `POST /jobs/<job_id>/reports` creates `report.md` or `report.pdf` for completed jobs.
 - `GET /jobs/<job_id>/archive.zip` downloads the bounded evidence package (`job.json`, `result.json`, allowed captures, and reports) while excluding arbitrary files/secrets.
 
@@ -55,7 +55,7 @@ Agentic persona crawl
 - Supported `--agent-task` values: `legal`, `student`, `teacher`, `register`, `logout`; repeat the flag to choose a subset, otherwise all tasks run.
 - Credentials come from `--agent-username`/`--agent-password` or `VIDIS_AGENT_USERNAME`/`VIDIS_AGENT_PASSWORD`. Passwords and token-like fields are redacted from JSON artifacts and traces.
 - Use `--agent-vidis-portal` or `VIDIS_AGENT_VIDIS_PORTAL` for VIDIS broker flows that require choosing a Landesportal/Schulportal such as `Test Landesportal` before username/password entry. The VIDIS/SSO start button is auto-detected from common labels (`VIDIS`, `Schulportal`, `Landesportal`, `SSO`); set `--agent-vidis-login-label` or `VIDIS_AGENT_VIDIS_LOGIN_LABEL` when a product uses a custom label.
-- After login, agentic mode follows internal click paths from visible links, deduplicates URLs, and continues until `--pages` is reached where possible. Repeat `--agent-instruction` to prioritize natural-language navigation hints such as `Gehe auf Assistenten und prüfe die Übersicht`; hidden or non-clickable internal links can still be visited through link discovery/Goto.
+- After login, agentic mode follows internal click paths from visible links, deduplicates URLs, and continues until `--pages` is reached where possible. Repeat `--agent-instruction` to prioritize natural-language navigation hints such as `Gehe auf Assistenten und prüfe die Übersicht`; hidden or non-clickable internal links can still be visited through link discovery/Goto. With `--agent-task legal`, the runner automatically tries common profile/user-menu legal paths such as profile, account, Impressum, and privacy; candidates are surfaced as report evidence for manual review.
 - Outputs are written to `results/<job_id>/agent/` (`agent_capture.json`, `step_result.jsonl`, `screenshots/`, `pdfs/`) and a safe summary is exposed as `results/<job_id>/agent_capture.json` / FastAPI artifact `agent_capture_json`.
 
 Structure

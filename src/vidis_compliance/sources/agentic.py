@@ -69,7 +69,8 @@ class DefaultAgenticRunner:
                 if username or password:
                     self._try_login(page, username, password, result, vidis_portal=vidis_portal, vidis_login_label=vidis_login_label)
                 target_pages = max(pages, 1)
-                self._browse_click_paths(page, base_url, result, target_pages=target_pages, instructions=instructions, reset_visited=True)
+                navigation_instructions = self._navigation_instructions(task_types, instructions)
+                self._browse_click_paths(page, base_url, result, target_pages=target_pages, instructions=navigation_instructions, reset_visited=True)
                 if not result.visited_urls:
                     result.visited_urls.append(str(page.url))
                     result.actions.append({"action": "visit", "url": str(page.url)})
@@ -114,6 +115,22 @@ class DefaultAgenticRunner:
         result.visited_urls.append(current_url)
         result.actions.append({"action": action, "url": current_url})
         result.steps.append({"action": action, "url": current_url})
+
+    def _navigation_instructions(self, task_types: list[str], instructions: list[str] | None) -> list[str]:
+        result: list[str] = []
+        if "legal" in task_types:
+            result.extend([
+                "Öffne Profil",
+                "Öffne Benutzerprofil",
+                "Öffne Konto",
+                "Klicke Impressum",
+                "Klicke Datenschutz",
+                "Klicke Rechtliches",
+            ])
+        for instruction in instructions or []:
+            if instruction not in result:
+                result.append(instruction)
+        return result
 
     def _try_login(
         self,
