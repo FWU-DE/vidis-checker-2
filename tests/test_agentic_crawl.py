@@ -14,8 +14,8 @@ from vidis_compliance.sources.agentic import AgenticCrawlResult, redacted_data
 class FakeAgentRunner:
     last_call: dict[str, object] = {}
 
-    def run(self, *, base_url: str, task_types: list[str], username: str | None, password: str | None, output_dir: Path, persona: str, pages: int, vidis_portal: str | None = None, vidis_login_label: str | None = None) -> AgenticCrawlResult:
-        FakeAgentRunner.last_call = {"vidis_portal": vidis_portal, "vidis_login_label": vidis_login_label, "username": username, "password": password}
+    def run(self, *, base_url: str, task_types: list[str], username: str | None, password: str | None, output_dir: Path, persona: str, pages: int, vidis_portal: str | None = None, vidis_login_label: str | None = None, instructions: list[str] | None = None) -> AgenticCrawlResult:
+        FakeAgentRunner.last_call = {"vidis_portal": vidis_portal, "vidis_login_label": vidis_login_label, "instructions": instructions or [], "username": username, "password": password}
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "screenshots").mkdir()
         (output_dir / "pdfs").mkdir()
@@ -72,6 +72,8 @@ def test_cli_agentic_scan_writes_redacted_artifacts(tmp_path: Path, monkeypatch)
             "Test Landesportal",
             "--agent-vidis-login-label",
             "Login über Schulportal",
+            "--agent-instruction",
+            "Gehe auf Assistenten und prüfe die Übersicht.",
             "--pages",
             "1",
         ],
@@ -93,6 +95,7 @@ def test_cli_agentic_scan_writes_redacted_artifacts(tmp_path: Path, monkeypatch)
     assert summary["task_types"] == ["legal", "student"]
     assert FakeAgentRunner.last_call["vidis_portal"] == "Test Landesportal"
     assert FakeAgentRunner.last_call["vidis_login_label"] == "Login über Schulportal"
+    assert FakeAgentRunner.last_call["instructions"] == ["Gehe auf Assistenten und prüfe die Übersicht."]
     assert summary["visited_urls"][-1].endswith("/dashboard")
 
 
@@ -135,8 +138,11 @@ def test_api_agentic_job_exposes_safe_agent_artifact(tmp_path: Path, monkeypatch
 
 
 class FakeCountLocator:
-    def __init__(self, count: int = 0):
+    def __init__(self, count: int = 0, *, text: str = "", href: str | None = None, page=None):
         self._count = count
+        self.text = text
+        self.href = href
+        self.page = page
 
     def count(self) -> int:
         return self._count
@@ -149,7 +155,38 @@ class FakeCountLocator:
         return None
 
     def click(self, *_args, **_kwargs):
+        if self.page and self.href:
+            self.page.url = self.href
         return None
+
+    def wait_for(self, *_args, **_kwargs):
+        return None
+
+    def all(self):
+        return [self]
+
+    def inner_text(self, *_args, **_kwargs):
+        return self.text
+
+    def get_attribute(self, name: str, *_args, **_kwargs):
+        if name == "href":
+            return self.href
+        return None
+
+
+class FakeLocatorList:
+    def __init__(self, items):
+        self.items = items
+
+    def count(self) -> int:
+        return len(self.items)
+
+    @property
+    def first(self):
+        return self.items[0] if self.items else FakeCountLocator(0)
+
+    def all(self):
+        return self.items
 
 
 class FakeVidisPage:
@@ -183,6 +220,45 @@ class FakeVidisPage:
         return None
 
 
+class FakeInternalLinksPage:
+    def __init__(self):
+        self.url = "https://app.example.test/"
+        self.goto_calls: list[str] = []
+        self.clicks: list[str] = []
+        self.links = [
+            FakeCountLocator(1, text="Neuer Chat", href="https://app.example.test/chat", page=self),
+            FakeCountLocator(1, text="Assistenten", href="https://app.example.test/assistants", page=self),
+            FakeCountLocator(1, text="Lernszenarien", href="https://app.example.test/", page=self),
+            FakeCountLocator(1, text="Dialogpartner", href="https://app.example.test/", page=self),
+            FakeCountLocator(1, text="Datenschutz", href="https://app.example.test/privacy", page=self),
+            FakeCountLocator(1, text="Extern", href="https://external.example.test/", page=self),
+        ]
+        self.text_targets = {"Assistenten": "https://app.example.test/assistants"}
+
+    def locator(self, selector: str):
+        if selector == "a[href]":
+            return FakeLocatorList(self.links)
+        for label, href in self.text_targets.items():
+            if label in selector:
+                return FakeCountLocator(1, text=label, href=href, page=self)
+        return FakeCountLocator(0)
+
+    def get_by_role(self, role: str, name=None):
+        label = getattr(name, "pattern", name)
+        for link in self.links:
+            if role in {"link", "button"} and str(label).lower() in link.text.lower():
+                self.clicks.append(link.text)
+                return link
+        return FakeCountLocator(0)
+
+    def wait_for_load_state(self, *_args, **_kwargs):
+        return None
+
+    def goto(self, url: str, *_args, **_kwargs):
+        self.goto_calls.append(url)
+        self.url = url
+
+
 class FakePlainLoginPage:
     def __init__(self):
         self.url = "https://app.example.test/login"
@@ -199,6 +275,76 @@ class FakePlainLoginPage:
     def goto(self, url: str, *_args, **_kwargs):
         self.goto_calls.append(url)
         self.url = url
+
+
+def test_agentic_discovers_internal_click_paths_until_page_limit() -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeInternalLinksPage()
+    result = AgenticCrawlResult(base_url="https://app.example.test/login", persona="Lehrkraft", task_types=[])
+
+    DefaultAgenticRunner()._browse_click_paths(page, "https://app.example.test/login", result, target_pages=3)
+
+    assert result.visited_urls == [
+        "https://app.example.test/",
+        "https://app.example.test/chat",
+        "https://app.example.test/assistants",
+    ]
+    assert "https://external.example.test/" not in result.visited_urls
+    assert [step["action"] for step in result.steps] == ["click_path", "click_path", "click_path"]
+
+
+def test_agentic_click_paths_keep_distinct_labels_on_same_spa_url() -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeInternalLinksPage()
+    result = AgenticCrawlResult(base_url="https://app.example.test/login", persona="Lehrkraft", task_types=[])
+
+    DefaultAgenticRunner()._browse_click_paths(page, "https://app.example.test/login", result, target_pages=5)
+
+    labels = [step.get("label") for step in result.steps if step.get("action") == "click_path"]
+    assert "Lernszenarien" in labels
+    assert "Dialogpartner" in labels
+    assert len(result.visited_urls) == 5
+
+
+def test_agentic_click_paths_ignore_pre_login_urls_for_page_limit() -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeInternalLinksPage()
+    result = AgenticCrawlResult(
+        base_url="https://app.example.test/login",
+        persona="Lehrkraft",
+        task_types=[],
+        visited_urls=["https://app.example.test/login", "https://broker.example.test/vidis"],
+    )
+
+    DefaultAgenticRunner()._browse_click_paths(page, "https://app.example.test/login", result, target_pages=3, reset_visited=True)
+
+    assert result.visited_urls == [
+        "https://app.example.test/",
+        "https://app.example.test/chat",
+        "https://app.example.test/assistants",
+    ]
+
+
+def test_agentic_executes_natural_language_instruction_clicks_before_discovery() -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeInternalLinksPage()
+    result = AgenticCrawlResult(base_url="https://app.example.test/login", persona="Lehrkraft", task_types=[])
+
+    DefaultAgenticRunner()._browse_click_paths(
+        page,
+        "https://app.example.test/login",
+        result,
+        target_pages=2,
+        instructions=["Gehe auf Assistenten und prüfe die Übersicht."],
+    )
+
+    assert result.visited_urls[0] == "https://app.example.test/assistants"
+    assert page.clicks[0] == "Assistenten"
+    assert result.steps[0]["instruction"] == "Gehe auf Assistenten und prüfe die Übersicht."
 
 
 def test_agentic_task_stays_on_authenticated_page_when_keyword_is_absent() -> None:

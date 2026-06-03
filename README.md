@@ -24,7 +24,7 @@ Manual
 
 Commands
 - vidis check --url https://example.com [--pages 8] [--pdf out/report.pdf] [--md out/report.md] [--ai-model provider:model]
-- VIDIS_AGENT_USERNAME=user VIDIS_AGENT_PASSWORD='***' vidis check --url https://app.example.com --agentic --agent-vidis-portal 'Test Landesportal' [--agent-vidis-login-label 'Mit VIDIS einloggen'] --agent-task legal --agent-task student --agent-persona SuS --output auth-scan
+- VIDIS_AGENT_USERNAME=user VIDIS_AGENT_PASSWORD='***' vidis check --url https://app.example.com --agentic --agent-vidis-portal 'Test Landesportal' [--agent-vidis-login-label 'Mit VIDIS einloggen'] [--agent-instruction 'Gehe auf Assistenten und prüfe die Übersicht'] --pages 10 --agent-task legal --agent-task student --agent-persona SuS --output auth-scan
 - vidis check --document agb.html --document avv.pdf [--privacy-url https://example.com/datenschutz] [--agb-url https://example.com/agb] [--avv-url https://example.com/avv]
 - vidis check --code-path /path/to/repo
 - vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
@@ -55,6 +55,7 @@ Agentic persona crawl
 - Supported `--agent-task` values: `legal`, `student`, `teacher`, `register`, `logout`; repeat the flag to choose a subset, otherwise all tasks run.
 - Credentials come from `--agent-username`/`--agent-password` or `VIDIS_AGENT_USERNAME`/`VIDIS_AGENT_PASSWORD`. Passwords and token-like fields are redacted from JSON artifacts and traces.
 - Use `--agent-vidis-portal` or `VIDIS_AGENT_VIDIS_PORTAL` for VIDIS broker flows that require choosing a Landesportal/Schulportal such as `Test Landesportal` before username/password entry. The VIDIS/SSO start button is auto-detected from common labels (`VIDIS`, `Schulportal`, `Landesportal`, `SSO`); set `--agent-vidis-login-label` or `VIDIS_AGENT_VIDIS_LOGIN_LABEL` when a product uses a custom label.
+- After login, agentic mode follows internal click paths from visible links, deduplicates URLs, and continues until `--pages` is reached where possible. Repeat `--agent-instruction` to prioritize natural-language navigation hints such as `Gehe auf Assistenten und prüfe die Übersicht`; hidden or non-clickable internal links can still be visited through link discovery/Goto.
 - Outputs are written to `results/<job_id>/agent/` (`agent_capture.json`, `step_result.jsonl`, `screenshots/`, `pdfs/`) and a safe summary is exposed as `results/<job_id>/agent_capture.json` / FastAPI artifact `agent_capture_json`.
 
 Structure
