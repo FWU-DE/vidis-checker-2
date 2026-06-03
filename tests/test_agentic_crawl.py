@@ -215,6 +215,8 @@ class FakeCountLocator:
         return None
 
     def click(self, *_args, **_kwargs):
+        if self.page and self.text:
+            self.page.current_view = self.text
         if self.page and self.href:
             self.page.url = self.href
         return None
@@ -231,6 +233,8 @@ class FakeCountLocator:
     def get_attribute(self, name: str, *_args, **_kwargs):
         if name == "href":
             return self.href
+        if name == "role" and self.href is None:
+            return "button"
         return None
 
 
@@ -283,6 +287,7 @@ class FakeVidisPage:
 class FakeInternalLinksPage:
     def __init__(self):
         self.url = "https://app.example.test/"
+        self.current_view = "Startseite"
         self.goto_calls: list[str] = []
         self.clicks: list[str] = []
         self.links = [
@@ -293,6 +298,9 @@ class FakeInternalLinksPage:
             FakeCountLocator(1, text="Profil", href="https://app.example.test/", page=self),
             FakeCountLocator(1, text="Impressum", href="https://app.example.test/impressum", page=self),
             FakeCountLocator(1, text="Datenschutz", href="https://app.example.test/privacy", page=self),
+            FakeCountLocator(1, text="Hilfe-Chat", page=self),
+            FakeCountLocator(1, text="Dialogpartner", page=self),
+            FakeCountLocator(1, text="Lernszenarien", page=self),
             FakeCountLocator(1, text="Extern", href="https://external.example.test/", page=self),
         ]
         self.text_targets = {
@@ -303,7 +311,7 @@ class FakeInternalLinksPage:
         }
 
     def locator(self, selector: str):
-        if selector == "a[href]":
+        if selector in {"a[href]", "a[href], button, [role='button'], [role='link'], nav a, nav button"}:
             return FakeLocatorList(self.links)
         for label, href in self.text_targets.items():
             if label in selector:
@@ -324,6 +332,7 @@ class FakeInternalLinksPage:
     def goto(self, url: str, *_args, **_kwargs):
         self.goto_calls.append(url)
         self.url = url
+        self.current_view = "Startseite"
 
 
 class FakePlainLoginPage:
@@ -375,6 +384,19 @@ def test_agentic_click_paths_keep_distinct_labels_on_same_spa_url() -> None:
     assert len(result.visited_urls) == 5
 
 
+def test_agentic_discovers_button_only_navigation_items() -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeInternalLinksPage()
+    result = AgenticCrawlResult(base_url="https://app.example.test/login", persona="Lehrkraft", task_types=[])
+
+    DefaultAgenticRunner()._browse_click_paths(page, "https://app.example.test/login", result, target_pages=10)
+
+    labels = [step.get("label") for step in result.steps if step.get("action") == "click_path"]
+    assert "Hilfe-Chat" in labels
+    assert len(result.visited_urls) == 10
+
+
 def test_agentic_legal_task_prioritizes_profile_menu_legal_paths() -> None:
     from vidis_compliance.sources.agentic import DefaultAgenticRunner
 
@@ -387,6 +409,33 @@ def test_agentic_legal_task_prioritizes_profile_menu_legal_paths() -> None:
     assert labels[:3] == ["Profil", "Impressum", "Datenschutz"]
     assert "https://app.example.test/impressum" in result.visited_urls
     assert "https://app.example.test/privacy" in result.visited_urls
+
+
+def test_agentic_captures_artifacts_immediately_for_same_url_spa_states(tmp_path: Path) -> None:
+    from vidis_compliance.sources.agentic import DefaultAgenticRunner
+
+    page = FakeInternalLinksPage()
+    result = AgenticCrawlResult(base_url="https://app.example.test/login", persona="Lehrkraft", task_types=[])
+    runner = DefaultAgenticRunner()
+
+    captured_views: list[str] = []
+
+    runner._browse_click_paths(
+        page,
+        "https://app.example.test/login",
+        result,
+        target_pages=5,
+        capture_step=lambda _step: captured_views.append(page.current_view),
+    )
+
+    assert captured_views == [
+        "Startseite",
+        "Neuer Chat",
+        "Assistenten",
+        "Lernszenarien",
+        "Dialogpartner",
+    ]
+    assert page.goto_calls == []
 
 
 def test_agentic_click_paths_ignore_pre_login_urls_for_page_limit() -> None:
