@@ -29,6 +29,8 @@ from .markdown import _sanitize_raw_capture
 PAGE_WIDTH, PAGE_HEIGHT = A4
 SCREENSHOT_HORIZONTAL_MARGIN_CM = 1.1
 SCREENSHOT_MAX_HEIGHT_CM = 20.8
+SCREENSHOT_THUMBNAIL_WIDTH_CM = 4.1
+SCREENSHOT_THUMBNAIL_HEIGHT_CM = 2.8
 
 
 def screenshot_slot_width_points() -> float:
@@ -47,6 +49,20 @@ def _scaled_screenshot_image(path: Path) -> Image:
     image.drawWidth = image.imageWidth * scale
     image.drawHeight = image.imageHeight * scale
     return image
+
+
+def _scaled_thumbnail_image(path: Path) -> Image:
+    image = Image(str(path))
+    max_width = SCREENSHOT_THUMBNAIL_WIDTH_CM * cm
+    max_height = SCREENSHOT_THUMBNAIL_HEIGHT_CM * cm
+    scale = min(max_width / image.imageWidth, max_height / image.imageHeight)
+    image.drawWidth = image.imageWidth * scale
+    image.drawHeight = image.imageHeight * scale
+    return image
+
+
+def _is_embeddable_public_screenshot(screenshot: dict, path: Path) -> bool:
+    return path.exists() and path.suffix.lower() in {".png", ".jpg", ".jpeg"} and not screenshot.get("local_only")
 
 
 def generate_pdf(
@@ -197,16 +213,30 @@ def _screenshot_overview(document: ReportDocument, styles) -> list:
     screenshots = _screenshots(document)
     if not screenshots:
         return []
-    return [
+    flow = [
         Paragraph("Screenshot-Nachweise", styles["SectionTitle"]),
         Paragraph(
-            f"{len(screenshots)} Screenshot(s) wurden als Bildnachweise erfasst. Die ersten Screenshots sind im Anhang eingebettet; "
+            f"{len(screenshots)} Screenshot(s) wurden als Bildnachweise erfasst. Öffentliche Screenshots erscheinen unten als Thumbnail-Übersicht und später seitenbreit im Anhang; "
             "authentifizierte/local-only Screenshots werden nur als lokale Artefakte referenziert.",
             styles["BodyText"],
         ),
-        _screenshot_index_table(screenshots),
-        Spacer(1, 0.45 * cm),
     ]
+    thumbnail_table = _screenshot_thumbnail_table(screenshots)
+    if thumbnail_table is not None:
+        flow.extend(
+            [
+                Paragraph("Screenshot-Thumbnail-Übersicht", styles["MiniHeading"]),
+                Paragraph(
+                    "Miniaturansichten der öffentlichen Screenshot-Nachweise; die großen Fassungen folgen im Screenshot-Anhang.",
+                    styles["SmallMuted"],
+                ),
+                thumbnail_table,
+            ]
+        )
+    else:
+        flow.append(_screenshot_index_table(screenshots))
+    flow.append(Spacer(1, 0.45 * cm))
+    return flow
 
 
 def _cookie_storage_overview(document: ReportDocument, styles) -> list:
@@ -284,12 +314,55 @@ def _screenshot_index_table(screenshots: list[dict]) -> Table:
     return table
 
 
+def _screenshot_thumbnail_table(screenshots: list[dict]) -> Table | None:
+    cells: list[list] = []
+    row: list = []
+    usable_count = 0
+    for screenshot in screenshots:
+        path = Path(str(screenshot.get("path") or ""))
+        if not _is_embeddable_public_screenshot(screenshot, path):
+            continue
+        usable_count += 1
+        label = str(screenshot.get("label") or screenshot.get("filename") or f"Screenshot {usable_count}")
+        url = str(screenshot.get("url") or "")
+        filename = str(screenshot.get("filename") or path.name)
+        cell = [
+            _scaled_thumbnail_image(path),
+            Paragraph(_xml_escape(_compact_text(label, 42)), _small_bold()),
+            Paragraph(_xml_escape(_compact_url(url, 66)), _small()),
+            Paragraph(_xml_escape(_compact_text(filename, 44)), _small()),
+        ]
+        row.append(cell)
+        if len(row) == 3:
+            cells.append(row)
+            row = []
+        if usable_count >= 9:
+            break
+    if row:
+        while len(row) < 3:
+            row.append("")
+        cells.append(row)
+    if not cells:
+        return None
+    table = Table(cells, colWidths=[5.05 * cm, 5.05 * cm, 5.05 * cm], hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f9fafb")),
+    ]))
+    return table
+
+
 def _screenshot_pages(document: ReportDocument, styles) -> list:
     flow = [Paragraph("Anhang: Screenshots", styles["SectionTitle"])]
     usable = []
     for screenshot in _screenshots(document):
         path = Path(str(screenshot.get("path") or ""))
-        if path.exists() and path.suffix.lower() in {".png", ".jpg", ".jpeg"} and not screenshot.get("local_only"):
+        if _is_embeddable_public_screenshot(screenshot, path):
             usable.append((screenshot, path))
     if not usable:
         flow.append(Paragraph("Keine einbettbaren Screenshot-Dateien vorhanden.", styles["BodyText"]))
