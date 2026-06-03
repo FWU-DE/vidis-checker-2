@@ -338,10 +338,12 @@ def test_generate_markdown_groups_cookie_local_and_session_storage_evidence_once
     assert text.count("## Gemeinsame Cookie- und Browser-Storage-Bewertung") == 1
     shared_section = text.split("## Gemeinsame Cookie- und Browser-Storage-Bewertung", 1)[1].split("## Kriterienbewertung", 1)[0]
     criteria_section = text.split("## Kriterienbewertung", 1)[1]
+    assert "| Cookie-Datenbank | Open Cookie Database EDPB" in shared_section
+    assert "https://github.com/jkwakman/Open-Cookie-Database/blob/master/open-cookie-database-edpb.json" in shared_section
     assert "| Betroffene Kriterien | RDS-CUC-371, RDS-CUC-372, RDS-CUC-374 |" in shared_section
     assert "| Cookie: _ga | nicht essenziell — Google Analytics / Analytics" in shared_section
     assert "| Cookie: CookieConsent | essenziell — Cookiebot / Functional" in shared_section
-    assert "| Cookie: unknown_cookie | manuell prüfen — Keine Einstufung in cookie_db.json/Heuristik" in shared_section
+    assert "| Cookie: unknown_cookie | manuell prüfen — Keine Einstufung in Open Cookie Database EDPB/Heuristik" in shared_section
     assert "| LocalStorage: matomo.id | nicht essenziell — Heuristik: Tracking-/Analyse-Storage" in shared_section
     assert "| LocalStorage: CookieConsentBulkSetting-abc | essenziell — Cookiebot / Functional" in shared_section
     assert "| SessionStorage: IDE | nicht essenziell — DoubleClick/Google Marketing / Marketing" in shared_section
