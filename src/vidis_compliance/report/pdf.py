@@ -92,6 +92,7 @@ def render_pdf(document: ReportDocument, output_pdf: Path) -> None:
     story.extend(_cover(document, counts, styles))
     story.extend(_ai_model_overview(document, styles))
     story.extend(_screenshot_overview(document, styles))
+    story.extend(_https_transport_overview(document, styles))
     story.extend(_cookie_storage_overview(document, styles))
     story.extend(_code_review_overview(document, styles))
     story.append(Paragraph("Kriterienbewertung", styles["SectionTitle"]))
@@ -270,6 +271,21 @@ def _screenshot_overview(document: ReportDocument, styles) -> list:
         flow.append(_screenshot_index_table(screenshots))
     flow.append(Spacer(1, 0.45 * cm))
     return flow
+
+
+def _https_transport_overview(document: ReportDocument, styles) -> list:
+    evidence = document.https_transport_evidence
+    if not evidence:
+        return []
+    return [
+        Paragraph("Gemeinsame HTTPS- und TLS-Bewertung", styles["SectionTitle"]),
+        Paragraph(
+            "Diese Übersicht fasst HTTPS-Erreichbarkeit, HTTP-Weiterleitung und TLS-Protokollpruefung fuer die betroffenen ITS-ENC-Kriterien zusammen.",
+            styles["BodyText"],
+        ),
+        _evidence_table(evidence),
+        Spacer(1, 0.45 * cm),
+    ]
 
 
 def _cookie_storage_overview(document: ReportDocument, styles) -> list:

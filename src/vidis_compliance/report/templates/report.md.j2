@@ -31,6 +31,18 @@ Wenn KI-gestützte Bewertungen oder optionale Vision-/Dokumentenprüfungen konfi
 | {{ status }} | {{ counts.get(status, 0) }} |
 {% endfor %}
 
+{% if document.https_transport_evidence -%}
+## Gemeinsame HTTPS- und TLS-Bewertung
+
+Diese Übersicht fasst HTTPS-Erreichbarkeit, HTTP-Weiterleitung und TLS-Protokollprüfung für die betroffenen ITS-ENC-Kriterien zusammen.
+
+| Nachweis | Wert |
+| --- | --- |
+{% for item in document.https_transport_evidence -%}
+| {{ item.label | table_escape }} | {{ item.value | table_escape }} |
+{% endfor %}
+
+{% endif -%}
 {% if document.cookie_storage_evidence -%}
 ## Gemeinsame Cookie- und Browser-Storage-Bewertung
 
