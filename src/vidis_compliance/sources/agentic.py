@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Sequence
-from urllib.parse import urljoin
 
 AgentTask = Literal["legal", "student", "teacher", "register", "logout"]
 DEFAULT_AGENT_TASKS: list[AgentTask] = ["legal", "student", "teacher", "register", "logout"]
@@ -45,6 +45,7 @@ class DefaultAgenticRunner:
         output_dir: Path,
         persona: str,
         pages: int,
+        vidis_portal: str | None = None,
     ) -> AgenticCrawlResult:
         from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
@@ -63,7 +64,7 @@ class DefaultAgenticRunner:
             try:
                 self._goto(page, base_url, result, "open")
                 if username or password:
-                    self._try_login(page, username, password, result)
+                    self._try_login(page, username, password, result, vidis_portal=vidis_portal)
                 for index, task_type in enumerate(task_types[: max(pages, 1)], start=1):
                     self._perform_task(page, base_url, task_type, result)
                     screenshot_rel = f"screenshots/{index:02d}-{task_type}.png"
@@ -94,8 +95,18 @@ class DefaultAgenticRunner:
         result.actions.append({"action": action, "url": current_url})
         result.steps.append({"action": action, "url": current_url})
 
-    def _try_login(self, page: Any, username: str | None, password: str | None, result: AgenticCrawlResult) -> None:
+    def _try_login(
+        self,
+        page: Any,
+        username: str | None,
+        password: str | None,
+        result: AgenticCrawlResult,
+        *,
+        vidis_portal: str | None = None,
+    ) -> None:
         result.steps.append({"action": "login", "username": username, "password": password})
+        if vidis_portal:
+            self._select_vidis_portal(page, vidis_portal, result)
         filled = False
         for selector in ["input[name='username']", "input[name='email']", "input[type='email']", "input[type='text']"]:
             try:
@@ -123,7 +134,140 @@ class DefaultAgenticRunner:
                 except Exception:
                     continue
         result.visited_urls.append(str(page.url))
-        result.actions.append({"action": "login", "url": str(page.url), "username": username})
+        result.actions.append({"action": "login", "url": str(page.url), "username": username, "vidis_portal": vidis_portal})
+
+    def _select_vidis_portal(self, page: Any, vidis_portal: str, result: AgenticCrawlResult) -> None:
+        self._click_first_role(page, [
+            ("button", "Mit VIDIS einloggen"),
+            ("button", "VIDIS"),
+            ("link", "Mit VIDIS einloggen"),
+            ("link", "VIDIS"),
+        ], timeout=4_000) or self._click_first(page, [
+            "button:has-text('Mit VIDIS einloggen')",
+            "a:has-text('Mit VIDIS einloggen')",
+            "button:has-text('VIDIS')",
+            "a:has-text('VIDIS')",
+        ], timeout=4_000)
+        self._wait_for_network_idle(page)
+        self._wait_for_any_selector(page, [
+            "input[role='combobox']",
+            "input[placeholder*='Bundesland']",
+            "input[placeholder*='Schule']",
+        ], timeout=10_000)
+
+        filled = self._fill_first_role(page, [("combobox", None), ("textbox", "Bundesland"), ("textbox", "Schule")], vidis_portal, timeout=3_000)
+        for selector in [
+            "input[role='combobox']",
+            "input[aria-autocomplete='list']",
+            "input[placeholder*='Bundesland' i]",
+            "input[placeholder*='Schule' i]",
+            "input[type='search']",
+            "input[type='text']",
+        ]:
+            try:
+                locator = page.locator(selector)
+                if not filled and locator.count():
+                    locator.first.fill(vidis_portal, timeout=3_000)
+                    filled = True
+                    break
+            except Exception:
+                continue
+        if not filled:
+            try:
+                locator = page.get_by_role("combobox")
+                if locator.count():
+                    locator.first.fill(vidis_portal, timeout=3_000)
+                    filled = True
+            except Exception:
+                pass
+        result.steps.append({"action": "select_vidis_portal", "portal": vidis_portal, "selected": filled})
+        self._wait_for_network_idle(page)
+        self._wait_for_any_selector(page, [
+            f"[role='option']:has-text('{vidis_portal}')",
+            f"button:has-text('{vidis_portal}')",
+            f"text={vidis_portal}",
+        ], timeout=5_000)
+
+        (self._click_first_role(page, [("option", vidis_portal), ("button", vidis_portal)], timeout=4_000) or self._click_first(page, [
+            f"[role='option']:has-text('{vidis_portal}')",
+            f"button:has-text('{vidis_portal}')",
+            f"li:has-text('{vidis_portal}')",
+            f"text={vidis_portal}",
+        ], timeout=4_000))
+        self._wait_for_network_idle(page)
+        result.steps.append({"action": "confirm_vidis_portal", "portal": vidis_portal})
+        self._wait_for_any_selector(page, [
+            "button:has-text('Sichere Anmeldung über')",
+            "button:has-text('Sichere Anmeldung')",
+            "button[aria-label*='Sichere Anmeldung']",
+        ], timeout=5_000)
+
+        clicked_secure = self._click_first_role(page, [
+            ("button", "Sichere Anmeldung"),
+            ("button", "Anmelden mit VIDIS"),
+            ("link", "Sichere Anmeldung"),
+            ("link", "Anmelden mit VIDIS"),
+        ], timeout=5_000) or self._click_first(page, [
+            "button:has-text('Sichere Anmeldung')",
+            "button:has-text('Anmelden mit VIDIS')",
+            "a:has-text('Sichere Anmeldung')",
+            "a:has-text('Anmelden mit VIDIS')",
+        ], timeout=5_000)
+        self._wait_for_network_idle(page)
+        result.steps.append({"action": "submit_vidis_portal", "portal": vidis_portal, "clicked": clicked_secure})
+
+    def _click_first_role(self, page: Any, role_names: list[tuple[str, str | None]], *, timeout: int) -> bool:
+        for role, name in role_names:
+            try:
+                kwargs = {"name": re.compile(name, re.IGNORECASE)} if name else {}
+                locator = page.get_by_role(role, **kwargs)
+                if locator.count():
+                    locator.first.click(timeout=timeout)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _fill_first_role(self, page: Any, role_names: list[tuple[str, str | None]], value: str, *, timeout: int) -> bool:
+        for role, name in role_names:
+            try:
+                kwargs = {"name": re.compile(name, re.IGNORECASE)} if name else {}
+                locator = page.get_by_role(role, **kwargs)
+                if locator.count():
+                    locator.first.fill(value, timeout=timeout)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _click_first(self, page: Any, selectors: list[str], *, timeout: int) -> bool:
+        for selector in selectors:
+            try:
+                locator = page.locator(selector)
+                if locator.count():
+                    locator.first.click(timeout=timeout)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _wait_for_any_selector(self, page: Any, selectors: list[str], *, timeout: int) -> bool:
+        for selector in selectors:
+            try:
+                page.locator(selector).first.wait_for(state="visible", timeout=timeout)
+                return True
+            except Exception:
+                continue
+        return False
+
+    def _wait_for_network_idle(self, page: Any) -> None:
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=5_000)
+            except Exception:
+                pass
 
     def _perform_task(self, page: Any, base_url: str, task_type: str, result: AgenticCrawlResult) -> None:
         keywords = {
@@ -143,12 +287,11 @@ class DefaultAgenticRunner:
             except Exception:
                 continue
         else:
-            target = urljoin(base_url.rstrip("/") + "/", keywords[0] if keywords else task_type)
-            try:
-                self._goto(page, target, result, task_type)
-                return
-            except Exception:
-                pass
+            current_url = str(page.url)
+            result.visited_urls.append(current_url)
+            result.actions.append({"task": task_type, "action": "visit", "url": current_url})
+            result.steps.append({"task": task_type, "action": "visit", "url": current_url, "note": "no matching in-app navigation found"})
+            return
         current_url = str(page.url)
         result.visited_urls.append(current_url)
         result.actions.append({"task": task_type, "action": "visit", "url": current_url})
