@@ -30,6 +30,10 @@ Commands
 - vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
 - vidis serve  # FastAPI
 
+Cookie and storage classification
+- Cookie/browser-storage checks use a bundled copy of the Open Cookie Database EDPB: https://github.com/jkwakman/Open-Cookie-Database/blob/master/open-cookie-database-edpb.json
+- Update the bundled copy with `uv run python scripts/update_cookie_db.py`.
+
 API automation
 - `uv run vidis serve --host 127.0.0.1 --port 8645` starts the FastAPI server.
 - Local development is open by default. Set `VIDIS_API_KEY` to require `Authorization: Bearer ***` on every endpoint.

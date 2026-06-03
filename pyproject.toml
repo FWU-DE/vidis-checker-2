@@ -40,7 +40,7 @@ package-dir = {"" = "src"}
 include-package-data = true
 
 [tool.setuptools.package-data]
-vidis_compliance = ["report/templates/*.j2", "checks/site/cookie_db.json"]
+vidis_compliance = ["report/templates/*.j2", "checks/site/cookie_db.json", "checks/site/COOKIE_DB_SOURCE.md"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

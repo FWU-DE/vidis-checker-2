@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 
 from ..checks.site.cookies import _classify_name
-from ..checks.site.cookie_db import get_default_cookie_database
+from ..checks.site.cookie_db import COOKIE_DATABASE_SOURCE_NAME, COOKIE_DATABASE_SOURCE_URL, get_default_cookie_database
 from ..models import CheckFinding, CriteriaIndex, JobResult, VidisCriterion
 
 HERE = Path(__file__).resolve().parents[1]
@@ -69,7 +69,10 @@ class ReportDocument:
         )
         if not covered:
             covered = [code for code in COOKIE_STORAGE_SECTION_ORDER if code in self.criteria.items]
-        evidence = [EvidenceItem("Betroffene Kriterien", ", ".join(covered))]
+        evidence = [
+            EvidenceItem("Cookie-Datenbank", f"{COOKIE_DATABASE_SOURCE_NAME} — {COOKIE_DATABASE_SOURCE_URL}"),
+            EvidenceItem("Betroffene Kriterien", ", ".join(covered)),
+        ]
         evidence.extend(_cookie_storage_inventory_evidence(self.raw_capture))
         cuc_453 = self.raw_capture.get("rds_cuc_453") or {}
         if cuc_453.get("observed"):
@@ -315,7 +318,7 @@ def _classification_text(name: str) -> str:
         return f"{status} — {detail.split('(', 1)[-1].rstrip(')')}"
     if "Allowlist-Präfix" in detail:
         return f"{status} — Allowlist-Präfix"
-    return f"{status} — Keine Einstufung in cookie_db.json/Heuristik"
+    return f"{status} — Keine Einstufung in {COOKIE_DATABASE_SOURCE_NAME}/Heuristik"
 
 
 def _cookie_storage_inventory_evidence(

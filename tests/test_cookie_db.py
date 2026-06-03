@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from vidis_compliance.checks.site.cookie_db import CookieDatabase
+from vidis_compliance.checks.site.cookie_db import CookieDatabase, COOKIE_DATABASE_SOURCE_URL, COOKIE_DATABASE_SOURCE_NAME
 from vidis_compliance.checks.site.cookies import (
     classify_cookie_description_completeness,
     classify_cookies,
@@ -71,6 +71,18 @@ def _write_cookie_db(path: Path) -> None:
     )
 
 
+def test_bundled_cookie_database_documents_open_cookie_database_edpb_source() -> None:
+    database = CookieDatabase()
+
+    assert COOKIE_DATABASE_SOURCE_NAME == "Open Cookie Database EDPB"
+    assert COOKIE_DATABASE_SOURCE_URL == "https://github.com/jkwakman/Open-Cookie-Database/blob/master/open-cookie-database-edpb.json"
+    info = database.get_cookie_info("_ga")
+    assert info is not None
+    assert info.category == "Analytics"
+    assert info.privacy_link
+    assert isinstance(info.wildcard_match, bool)
+
+
 def test_cookie_database_maps_categories_to_essentiality(tmp_path: Path) -> None:
     db_path = tmp_path / "cookie_db.json"
     _write_cookie_db(db_path)
@@ -126,7 +138,7 @@ def test_classify_cookies_passes_when_database_confirms_all_cookies_essential(tm
     )
 
     assert status == "PASS"
-    assert "Alle erkannten Cookies/Speicher-Einträge sind laut cookie_db.json/Allowlist essenziell" in note
+    assert "Alle erkannten Cookies/Speicher-Einträge sind laut Open Cookie Database EDPB/Allowlist essenziell" in note
     assert "RDS-CUC-371/372" in note
 
 

@@ -3,7 +3,7 @@ import re
 from typing import Dict, Any, List, Tuple
 
 from ...models import Status
-from .cookie_db import CookieDatabase, get_default_cookie_database
+from .cookie_db import COOKIE_DATABASE_SOURCE_NAME, CookieDatabase, get_default_cookie_database
 
 # Minimal known tracker heuristics
 TRACKER_SCRIPT_SNIPPETS = [
@@ -158,7 +158,7 @@ def classify_cookies(
         unknown_details=unknown_details,
     )
 
-    note_parts = ["RDS-CUC-371/372 cookie_db.json + Storage-Allowlist"]
+    note_parts = [f"RDS-CUC-371/372 {COOKIE_DATABASE_SOURCE_NAME} + Storage-Allowlist"]
     non_essential_cookies = [d for d in non_essential_details if not d.startswith(('LocalStorage:', 'SessionStorage:'))]
     non_essential_local = [d.removeprefix('LocalStorage: ') for d in non_essential_details if d.startswith('LocalStorage:')]
     non_essential_session = [d.removeprefix('SessionStorage: ') for d in non_essential_details if d.startswith('SessionStorage:')]
@@ -196,7 +196,7 @@ def classify_cookies(
     if unknown_details:
         return 'MANUELL', note
     if essential_details:
-        return 'PASS', "Alle erkannten Cookies/Speicher-Einträge sind laut cookie_db.json/Allowlist essenziell; " + note
+        return 'PASS', f"Alle erkannten Cookies/Speicher-Einträge sind laut {COOKIE_DATABASE_SOURCE_NAME}/Allowlist essenziell; " + note
     return 'MANUELL', 'Keine Cookies oder Browser-Storage-Einträge zur Bewertung nach RDS-CUC-371/372 erkannt'
 
 
@@ -335,7 +335,7 @@ def classify_local_storage(data: Dict[str, Any], audience: str) -> Tuple[Status,
         return 'MANUELL', f"Unbekannter Browser-Storage: {keys}"
     if essential_details:
         keys = ", ".join(sorted({item.split(': ', 1)[-1] for item in essential_details}))
-        return 'PASS', f"Alle erkannten Browser-Storage-Schlüssel sind laut cookie_db.json/Allowlist essenziell: {keys}"
+        return 'PASS', f"Alle erkannten Browser-Storage-Schlüssel sind laut {COOKIE_DATABASE_SOURCE_NAME}/Allowlist essenziell: {keys}"
     return 'PASS', 'Keine LocalStorage-/SessionStorage-Schlüssel erkannt'
 
 

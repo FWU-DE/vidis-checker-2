@@ -9,6 +9,14 @@ from typing import Any, Dict, Literal, Tuple
 
 CookieCategory = Literal["Analytics", "Functional", "Marketing", "Security"]
 
+COOKIE_DATABASE_SOURCE_NAME = "Open Cookie Database EDPB"
+COOKIE_DATABASE_SOURCE_URL = "https://github.com/jkwakman/Open-Cookie-Database/blob/master/open-cookie-database-edpb.json"
+COOKIE_DATABASE_RAW_URL = "https://raw.githubusercontent.com/jkwakman/Open-Cookie-Database/master/open-cookie-database-edpb.json"
+COOKIE_DATABASE_DESCRIPTION = (
+    "VIDIS nutzt eine gebündelte Kopie der Open Cookie Database EDPB als deterministische "
+    "Orientierung für Cookie- und Browser-Storage-Einstufungen."
+)
+
 ESSENTIAL_CATEGORIES = {"Functional", "Security"}
 NON_ESSENTIAL_CATEGORIES = {"Analytics", "Marketing"}
 
