@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .catalog import criteria_for_source
 from .report.data import load_criteria
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -27,13 +28,13 @@ COLUMNS = [
 PLATFORM_GAP_AREAS: dict[str, dict[str, str]] = {
     "PLATFORM-AUTH-PERSONA-CRAWL": {
         "name": "Agent login and persona based flows",
-        "platform_status": "planned capability",
-        "implementation_status": "not implemented",
-        "input_needed": "Human-operated credentials, role/persona definitions, tenant-specific login steps.",
-        "automation_level": "manual gap",
-        "evidence_artifacts": "None yet; future artifact should capture authenticated journey transcript.",
-        "cli_api_availability": "No CLI/API endpoint currently accepts login personas.",
-        "known_limitations": "Authenticated checks are intentionally not automated until credential handling, consent, and replay safety are designed.",
+        "platform_status": "opt-in capability",
+        "implementation_status": "partial",
+        "input_needed": "Test credentials, persona (SuS/Lehrkraefte), optional VIDIS Landesportal and navigation hints.",
+        "automation_level": "authenticated evidence collection automated, most judgements manual",
+        "evidence_artifacts": "agent_capture.json, step_result.jsonl, authenticated screenshots.",
+        "cli_api_availability": "CLI: vidis check --agentic; API: POST /jobs with agentic=true.",
+        "known_limitations": "Login flows differ per product; credentials must be test accounts. Findings from the agent run never downgrade deterministic site results.",
     },
     "PLATFORM-SCREENSHOT-VISION": {
         "name": "Screenshot and visual inspection",
@@ -48,12 +49,12 @@ PLATFORM_GAP_AREAS: dict[str, dict[str, str]] = {
     "PLATFORM-API-AUTH-JOBS-ZIP": {
         "name": "API authentication, job list, and ZIP artifact download",
         "platform_status": "automation hardening",
-        "implementation_status": "partial",
-        "input_needed": "API deployment policy, auth mechanism, artifact retention, and ZIP manifest requirements.",
-        "automation_level": "job creation automated, ops hardening open",
-        "evidence_artifacts": "result.json, capture.json, code_capture.json, document_capture.json, report PDFs/Markdown.",
-        "cli_api_availability": "FastAPI async job endpoints exist; auth, list filtering, and ZIP bundle endpoint are not complete.",
-        "known_limitations": "Do not expose the current API beyond trusted local/internal contexts without auth and artifact access controls.",
+        "implementation_status": "resolved",
+        "input_needed": "API keys (VIDIS_API_KEYS), results volume, artifact retention policy.",
+        "automation_level": "authenticated job API with discovery, job list and ZIP download",
+        "evidence_artifacts": "result.json, capture.json, code_capture.json, document_capture.json, agent_capture.json, report PDFs/Markdown.",
+        "cli_api_availability": "GET /discovery lists the available checks; all job endpoints require an API key.",
+        "known_limitations": "Artifact retention is not automated; old jobs stay on the results volume until removed.",
     },
     "PLATFORM-FASTAPI-DOCUMENT-URLS": {
         "name": "FastAPI document URL ingestion",
@@ -77,50 +78,9 @@ PLATFORM_GAP_AREAS: dict[str, dict[str, str]] = {
     },
 }
 
-_AUTOMATED_BY_SITE = {
-    "ITS-ENC-359",
-    "ITS-ENC-360",
-    "ITS-ENC-361",
-    "RDS-CUC-371",
-    "RDS-CUC-372",
-    "RDS-CUC-373",
-    "RDS-CUC-374",
-    "RDS-CUC-375",
-    "RDS-CUC-376",
-    "RDS-CUC-377",
-    "RDS-CUC-453",
-    "RDS-IPF-364",
-    "RDS-IPF-365",
-    "RDS-IPF-366",
-    "RDS-IPF-367",
-    "RDS-VIN-354",
-    "RDS-WER-384",
-    "RDS-WER-385",
-}
-_AUTOMATED_BY_CODE = {
-    "RDS-CDN-379",
-    "RDS-CUC-371",
-    "RDS-CUC-372",
-    "RDS-CUC-373",
-    "RDS-CUC-374",
-    "RDS-CUC-375",
-    "RDS-CUC-376",
-    "RDS-CUC-377",
-    "RDS-DEV-380",
-    "RDS-IPF-364",
-    "RDS-IPF-365",
-}
-_AUTOMATED_BY_DOCUMENTS = {
-    "RDS-AGB-368",
-    "RDS-CUC-377",
-    "RDS-AGB-369",
-    "RDS-CUC-453",
-    "RDS-DEV-380",
-    "RDS-DEV-381",
-    "RDS-DEV-466",
-    "RDS-DSO-383",
-    "RDS-SPE-370",
-}
+_AUTOMATED_BY_SITE = criteria_for_source("site")
+_AUTOMATED_BY_CODE = criteria_for_source("code")
+_AUTOMATED_BY_DOCUMENTS = criteria_for_source("documents")
 _MANUAL_OVERLAY = {
     "RDS-CUC-453": "Cookie-/Storage-Beschreibungen werden automatisch gegen verfügbare Datenschutzerklärungstexte abgeglichen; fehlender oder semantisch unklarer Text bleibt MANUELL.",
     "RDS-CUC-374": "Automatisch bewertbar: keine oder nur erlaubte Storage-Keys bestehen; unbekannte Storage-Keys bleiben reviewpflichtig.",

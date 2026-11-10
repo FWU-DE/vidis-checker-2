@@ -1,0 +1,32 @@
+# Deployment for Coolify (Docker Compose build pack) or plain `docker compose up`.
+# Coolify: set VIDIS_API_KEYS in the environment and assign the domain to the
+# vidis-checker service, port 8645. Traefik terminates TLS.
+services:
+  vidis-checker:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Comma-separated; every key gets full API access. Required.
+      VIDIS_API_KEYS: ${VIDIS_API_KEYS:?set VIDIS_API_KEYS}
+      VIDIS_JOB_WORKERS: ${VIDIS_JOB_WORKERS:-2}
+      # Optional defaults for agentic runs; per-job credentials override them.
+      VIDIS_AGENT_USERNAME: ${VIDIS_AGENT_USERNAME:-}
+      VIDIS_AGENT_PASSWORD: ${VIDIS_AGENT_PASSWORD:-}
+      VIDIS_AGENT_VIDIS_PORTAL: ${VIDIS_AGENT_VIDIS_PORTAL:-}
+    expose:
+      - "8645"
+    volumes:
+      - vidis-results:/data/results
+      - vidis-inputs:/data/inputs
+    # Chromium needs more than Docker's 64 MB default /dev/shm.
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8645/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  vidis-results:
+  vidis-inputs:

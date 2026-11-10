@@ -1,29 +1,46 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import os
+import socket
 import threading
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version as package_version
 from io import BytesIO
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response, Security, status
+from fastapi.responses import FileResponse
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from . import cli as cli_module
+from .catalog import CHECKS, checks_for_criterion, runtime_availability
 from .cli import load_criteria
-from .models import CheckFinding, JobConfig, JobResult, Status
+from .models import JobResult
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
-from .sources.documents.analyze import build_document_inputs
 
-app = FastAPI(title="VIDIS Compliance API")
+try:
+    SERVICE_VERSION = package_version("vidis-compliance")
+except PackageNotFoundError:  # pragma: no cover - running from a source tree without install
+    SERVICE_VERSION = "0.0.0"
+
+app = FastAPI(
+    title="VIDIS Compliance API",
+    version=SERVICE_VERSION,
+    description=(
+        "Prüft Websites, Quellcode und Dokumente gegen die VIDIS-Prüfkriterien. "
+        "`GET /discovery` listet die verfügbaren Prüfungen; alle Job-Endpunkte brauchen einen API-Schlüssel."
+    ),
+)
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "agent_capture.json", "job.json"}
@@ -46,14 +63,26 @@ class JobCreateRequest(BaseModel):
     agent_tasks: list[Literal["legal", "student", "teacher", "register", "logout"]] = Field(default_factory=list)
     agent_username: str | None = None
     agent_password: str | None = Field(default=None, exclude=True, repr=False)
+    agent_persona: Literal["SuS", "Lehrkraefte", "beide"] | None = None
+    agent_vidis_portal: str | None = Field(default=None, max_length=200)
+    agent_vidis_login_label: str | None = Field(default=None, max_length=200)
+    agent_instructions: list[str] = Field(default_factory=list, max_length=20)
+    lighthouse: bool = False
+    webinspector_export: bool = False
 
     @model_validator(mode="after")
     def require_target(self) -> "JobCreateRequest":
         if not self.document_paths and self.document_path:
             self.document_paths = [self.document_path]
+        if self.code_path:
+            _require_allowed_local_path(self.code_path)
         for document_path in self.document_paths:
+            _require_allowed_local_path(document_path)
             if not Path(document_path).is_file():
                 raise ValueError(f"document path does not exist: {document_path}")
+        for url in (self.target_url, self.agb_url, self.privacy_url, self.avv_url):
+            if url is not None:
+                _require_public_target(str(url))
         if not (
             self.target_url
             or self.code_path
@@ -114,33 +143,109 @@ class ReportCreatedResponse(BaseModel):
     download_url: str
 
 
-@app.middleware("http")
-async def require_bearer_auth(request: Request, call_next):
-    api_key = _api_key()
-    if api_key:
-        expected = f"Bearer {api_key}"
-        supplied = request.headers.get("authorization", "")
-        if not hmac.compare_digest(supplied, expected):
-            return JSONResponse(
-                {"detail": "Unauthorized"},
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-    return await call_next(request)
+_bearer = HTTPBearer(auto_error=False, description="API-Schlüssel als `Authorization: Bearer <key>`.")
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False, description="API-Schlüssel als `X-API-Key: <key>`.")
 
 
-@app.get("/health")
+def require_api_key(
+    bearer: HTTPAuthorizationCredentials | None = Security(_bearer),
+    header_key: str | None = Security(_api_key_header),
+) -> None:
+    keys = _api_keys()
+    if not keys:
+        if _auth_disabled():
+            return
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API authentication is not configured: set VIDIS_API_KEYS",
+        )
+    supplied = header_key or (bearer.credentials if bearer else "")
+    if not supplied or not any(hmac.compare_digest(supplied.encode(), key.encode()) for key in keys):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+public = APIRouter(tags=["public"])
+protected = APIRouter(tags=["jobs"], dependencies=[Security(require_api_key)])
+
+
+@public.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": SERVICE_VERSION}
 
 
-@app.get("/criteria")
+@public.get("/criteria")
 def criteria():
     crit = load_criteria()
     return {"items": {k: v.model_dump() for k, v in crit.items.items()}}
 
 
-@app.post("/jobs", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
+@public.get("/discovery")
+@public.get("/.well-known/vidis-checks", include_in_schema=False)
+def discovery(request: Request):
+    """Machine-readable list of the available checks, criteria and endpoints."""
+    base = str(request.base_url).rstrip("/")
+    crit = load_criteria()
+    available = runtime_availability()
+    checks = []
+    for check in CHECKS:
+        item = check.to_dict()
+        item["available"] = available.get(check.id, True)
+        checks.append(item)
+    criteria_items = []
+    for code, criterion in crit.items.items():
+        check_ids = checks_for_criterion(code)
+        deterministic = [check_id for check_id in check_ids if check_id.split(".", 1)[0] in {"site", "code", "documents"}]
+        criteria_items.append(
+            {
+                "code": code,
+                "name": criterion.name,
+                "area": criterion.area,
+                "must": criterion.must,
+                "checks": check_ids,
+                "automated": bool(deterministic),
+            }
+        )
+    return {
+        "service": "vidis-compliance",
+        "version": SERVICE_VERSION,
+        "criteria_catalog": {"name": "VIDIS-Prüfkriterien", "version": "V0.2", "count": len(criteria_items)},
+        "authentication": {
+            "required": bool(_api_keys()) or not _auth_disabled(),
+            "schemes": [
+                {"type": "http", "scheme": "bearer", "header": "Authorization: Bearer <key>"},
+                {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+            ],
+            "public_paths": ["/health", "/discovery", "/.well-known/vidis-checks", "/criteria", "/docs", "/openapi.json"],
+        },
+        "endpoints": [
+            {"method": "POST", "path": "/jobs", "auth": True, "description": "Prüfung starten (asynchron)"},
+            {"method": "GET", "path": "/jobs", "auth": True, "description": "Jobs auflisten, Filter status, limit, offset"},
+            {"method": "GET", "path": "/jobs/{job_id}", "auth": True, "description": "Status, Ergebnis und Artefakt-Links"},
+            {"method": "POST", "path": "/jobs/{job_id}/reports", "auth": True, "description": "Bericht als md oder pdf erzeugen"},
+            {"method": "GET", "path": "/jobs/{job_id}/reports/{report_name}", "auth": True, "description": "Bericht herunterladen"},
+            {"method": "GET", "path": "/jobs/{job_id}/artifacts/{name}", "auth": True, "description": "Artefakt herunterladen"},
+            {"method": "GET", "path": "/jobs/{job_id}/archive.zip", "auth": True, "description": "Beweispaket als ZIP"},
+        ],
+        "job_request": {
+            "schema": f"{base}/openapi.json#/components/schemas/JobCreateRequest",
+            "example": {
+                "target_url": "https://anbieter.example",
+                "privacy_url": "https://anbieter.example/datenschutz",
+                "target_audience": "SuS",
+                "pages": 8,
+            },
+        },
+        "checks": checks,
+        "criteria": criteria_items,
+        "links": {"openapi": f"{base}/openapi.json", "docs": f"{base}/docs"},
+    }
+
+
+@protected.post("/jobs", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_job(request: JobCreateRequest) -> JobCreatedResponse:
     job_id = uuid.uuid4().hex
     metadata = JobMetadata(
@@ -152,11 +257,12 @@ def create_job(request: JobCreateRequest) -> JobCreatedResponse:
     )
     _job_dir(job_id).mkdir(parents=True, exist_ok=False)
     _write_metadata(metadata)
-    _JOB_EXECUTOR.submit(_run_job, job_id)
+    # The request object still carries agent_password, which is never written to disk.
+    _JOB_EXECUTOR.submit(_run_job, job_id, request)
     return JobCreatedResponse(id=job_id, status=metadata.status, status_url=f"/jobs/{job_id}")
 
 
-@app.get("/jobs", response_model=JobListResponse)
+@protected.get("/jobs", response_model=JobListResponse)
 def list_jobs(
     status_filter: JobStatus | None = Query(default=None, alias="status"),
     limit: int = Query(default=100, ge=1, le=500),
@@ -172,12 +278,12 @@ def list_jobs(
     )
 
 
-@app.get("/jobs/{job_id}", response_model=JobMetadata)
+@protected.get("/jobs/{job_id}", response_model=JobMetadata)
 def get_job(job_id: str) -> JobMetadata:
     return _read_metadata(job_id)
 
 
-@app.get("/jobs/{job_id}/artifacts/{artifact_name:path}")
+@protected.get("/jobs/{job_id}/artifacts/{artifact_name:path}")
 def get_artifact(job_id: str, artifact_name: str):
     path = _safe_named_file(job_id, artifact_name, ALLOWED_ARTIFACTS)
     if path.suffix == ".json":
@@ -185,7 +291,7 @@ def get_artifact(job_id: str, artifact_name: str):
     return FileResponse(path)
 
 
-@app.post(
+@protected.post(
     "/jobs/{job_id}/reports",
     response_model=ReportCreatedResponse,
     status_code=status.HTTP_201_CREATED,
@@ -211,7 +317,7 @@ def create_report(job_id: str, request: ReportCreateRequest) -> ReportCreatedRes
     )
 
 
-@app.get("/jobs/{job_id}/reports/{report_name}")
+@protected.get("/jobs/{job_id}/reports/{report_name}")
 def get_report(job_id: str, report_name: str):
     path = _safe_named_file(job_id, report_name, ALLOWED_REPORTS)
     media_type = "text/markdown; charset=utf-8" if report_name.endswith(".md") else "application/pdf"
@@ -220,7 +326,7 @@ def get_report(job_id: str, report_name: str):
     return FileResponse(path, media_type=media_type, filename=report_name)
 
 
-@app.get("/jobs/{job_id}/archive.zip")
+@protected.get("/jobs/{job_id}/archive.zip")
 def get_archive(job_id: str):
     metadata = _read_metadata(job_id)
     job_dir = _job_dir(job_id)
@@ -241,14 +347,16 @@ def get_archive(job_id: str):
     )
 
 
-def _run_job(job_id: str) -> None:
+def _run_job(job_id: str, request: JobCreateRequest | None = None) -> None:
     metadata = _read_metadata(job_id)
+    if request is not None:
+        metadata.request = request
     try:
         metadata.status = "running"
         metadata.updated_at = _now()
         _write_metadata(metadata)
 
-        result, raw_capture, code_capture, document_capture, agent_capture = _execute_check(job_id, metadata.request)
+        result, raw_capture, code_capture, document_capture, agent_capture = _execute_check(job_id, request or metadata.request)
         job_dir = _job_dir(job_id)
         (job_dir / "result.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
         if raw_capture is not None:
@@ -284,122 +392,80 @@ def _run_job(job_id: str) -> None:
 
 
 def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None, dict | None, dict | None]:
-    crit = load_criteria()
-    cfg = JobConfig(
+    run = cli_module.run_checks(
         job_id=job_id,
-        target_url=str(request.target_url) if request.target_url else None,
+        outdir=_job_dir(job_id),
+        url=str(request.target_url) if request.target_url else None,
         code_path=request.code_path,
         pages=request.pages,
-        target_audience=request.target_audience,
-    )
-    findings: list[CheckFinding] = []
-    raw_capture = None
-    code_capture = None
-    document_capture = None
-    agent_capture = None
-
-    if cfg.target_url:
-        cap = cli_module.crawl(
-            cfg.target_url,
-            pages=cfg.pages,
-            headless=True,
-            screenshot_dir=_job_dir(job_id) / "screenshots",
-        )
-        raw_capture = _capture_to_dict(cap)
-        raw_capture["vision_reviews"] = raw_capture.get("vision_reviews") or cli_module.review_screenshots(raw_capture.get("screenshots") or [])
-        page_signals = {
-            "cookies": cap.cookies,
-            "scripts": cap.scripts,
-            "requests": cap.requests,
-            "resources": cap.resources,
-            "browser_signals": cap.browser_signals,
-            "local_storage": cap.local_storage,
-            "session_storage": cap.session_storage,
-        }
-        s1, n1 = cli_module.classify_cookies(page_signals, cfg.target_audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-371", status=cast(Status, s1), note=n1))
-        findings.append(CheckFinding(criterion="RDS-CUC-372", status=cast(Status, s1), note=n1))
-        s2, n2 = cli_module.classify_tracking_pixel(page_signals, cfg.target_audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-373", status=cast(Status, s2), note=n2))
-        s3, n3 = cli_module.classify_local_storage(page_signals, cfg.target_audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-374", status=cast(Status, s3), note=n3))
-        s377, n377 = cli_module.classify_tracking_mechanisms(page_signals, cfg.target_audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-377", status=cast(Status, s377), note=n377))
-        findings.append(CheckFinding(criterion="RDS-CUC-453", status="MANUELL", note="Datenschutzerklärung vs. Cookies abgleichen"))
-
-    if cfg.code_path:
-        code_findings, code_capture = cli_module.inspect_code_path(cfg.code_path, cfg.target_audience)
-        by_criterion = {finding.criterion: finding for finding in findings}
-        for finding in code_findings:
-            by_criterion[finding.criterion] = finding
-        findings = list(by_criterion.values())
-
-    document_inputs = build_document_inputs(
-        request.document_paths,
+        audience=request.target_audience,
+        documents=list(request.document_paths),
         agb_url=str(request.agb_url) if request.agb_url else None,
         privacy_url=str(request.privacy_url) if request.privacy_url else None,
         avv_url=str(request.avv_url) if request.avv_url else None,
+        agentic=request.agentic,
+        agent_tasks=list(request.agent_tasks),
+        agent_persona=request.agent_persona,
+        agent_username=request.agent_username,
+        agent_password=request.agent_password,
+        agent_vidis_portal=request.agent_vidis_portal,
+        agent_vidis_login_label=request.agent_vidis_login_label,
+        agent_instructions=list(request.agent_instructions),
+        lighthouse=request.lighthouse,
+        webinspector_export=request.webinspector_export,
     )
-    if document_inputs:
-        document_findings, document_capture = cli_module.analyze_documents(document_inputs)
-        by_criterion = {finding.criterion: finding for finding in findings}
-        for finding in document_findings:
-            by_criterion[finding.criterion] = finding
-        if raw_capture is not None:
-            raw_capture["document_capture"] = document_capture
-            page_signals = {
-                "cookies": raw_capture.get("cookies") or [],
-                "scripts": raw_capture.get("scripts") or [],
-                "requests": raw_capture.get("requests") or [],
-                "resources": raw_capture.get("resources") or [],
-                "browser_signals": raw_capture.get("browser_signals") or {},
-                "local_storage": raw_capture.get("local_storage") or {},
-                "session_storage": raw_capture.get("session_storage") or {},
-                "document_capture": document_capture,
-            }
-            s377, n377 = cli_module.classify_tracking_mechanisms(page_signals, cfg.target_audience)
-            by_criterion["RDS-CUC-377"] = CheckFinding(criterion="RDS-CUC-377", status=cast(Status, s377), note=n377)
-        findings = list(by_criterion.values())
-
-    if request.agentic:
-        task_types = cli_module.normalize_agent_tasks(list(request.agent_tasks))
-        username = cli_module.resolve_secret(request.agent_username, "VIDIS_AGENT_USERNAME")
-        password = cli_module.resolve_secret(request.agent_password, "VIDIS_AGENT_PASSWORD")
-        agent_result = cli_module.DefaultAgenticRunner().run(
-            base_url=cfg.target_url or "",
-            task_types=task_types,
-            username=username,
-            password=password,
-            output_dir=_job_dir(job_id) / "agent",
-            persona=cfg.target_audience,
-            pages=cfg.pages,
-        )
-        agent_capture = cli_module.write_agentic_artifacts(agent_result, _job_dir(job_id) / "agent", [username, password])
-        raw_capture = cli_module._merge_agentic_report_capture(raw_capture, agent_capture, _job_dir(job_id) / "agent", _job_dir(job_id))
-        by_criterion = {finding.criterion: finding for finding in findings}
-        for finding in cli_module._agentic_signal_findings(agent_capture, cfg.target_audience):
-            existing = by_criterion.get(finding.criterion)
-            if existing is None or existing.status == "MANUELL":
-                by_criterion[finding.criterion] = finding
-        for finding in cli_module._agentic_ipf_findings(agent_capture):
-            existing = by_criterion.get(finding.criterion)
-            if existing is None or existing.status in {"MANUELL", "FAIL"}:
-                by_criterion[finding.criterion] = finding
-        findings = list(by_criterion.values())
-
-    wired = {finding.criterion for finding in findings}
-    for code in crit.items.keys():
-        if code not in wired:
-            findings.append(CheckFinding(criterion=code, status="MANUELL", note="Not yet implemented"))
-    return JobResult(job_id=job_id, findings=findings), raw_capture, code_capture, document_capture, agent_capture
+    return run.result, run.raw_capture, run.code_capture, run.document_capture, run.agent_capture
 
 
 def _results_root() -> Path:
     return Path(os.environ.get("VIDIS_RESULTS_DIR", "results")).resolve()
 
 
-def _api_key() -> str:
-    return os.environ.get("VIDIS_API_KEY") or os.environ.get("API_KEY", "")
+def _api_keys() -> list[str]:
+    raw = [os.environ.get("VIDIS_API_KEYS", ""), os.environ.get("VIDIS_API_KEY", ""), os.environ.get("API_KEY", "")]
+    return [key.strip() for value in raw for key in value.split(",") if key.strip()]
+
+
+def _auth_disabled() -> bool:
+    return _env_flag("VIDIS_AUTH_DISABLED")
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _require_allowed_local_path(value: str) -> None:
+    """Restrict server-side paths when VIDIS_ALLOWED_PATH_ROOTS is set.
+
+    Without the restriction any API caller could read files on the server through
+    code_path or document_paths. The container image sets it to /data/inputs.
+    """
+    roots_value = os.environ.get("VIDIS_ALLOWED_PATH_ROOTS", "").strip()
+    if not roots_value:
+        return
+    if roots_value.lower() == "none":
+        raise ValueError("local paths are disabled on this server; use document URLs instead")
+    path = Path(value).resolve()
+    roots = [Path(root).resolve() for root in roots_value.split(os.pathsep) if root.strip()]
+    if not any(path == root or root in path.parents for root in roots):
+        raise ValueError(f"path is outside the allowed input directories: {value}")
+
+
+def _require_public_target(url: str) -> None:
+    """Refuse URLs that point into the server's own network unless explicitly allowed."""
+    if _env_flag("VIDIS_ALLOW_PRIVATE_TARGETS"):
+        return
+    host = urlsplit(url).hostname or ""
+    if host.lower() in {"localhost", "localhost.localdomain"} or host.lower().endswith(".localhost"):
+        raise ValueError(f"target host is not public: {host}")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return  # unresolvable here; the crawl will report it
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0].split("%", 1)[0])
+        if not address.is_global:
+            raise ValueError(f"target host resolves to a non-public address: {host}")
 
 
 def _job_dir(job_id: str) -> Path:
@@ -500,7 +566,7 @@ def _copy_public_screenshots(job_id: str, raw_capture: dict) -> None:
     screenshots = raw_capture.get("screenshots") or []
     output_dir = _job_dir(job_id) / "screenshots"
     for item in screenshots:
-        if item.get("local_only"):
+        if item.get("local_only") or item.get("authenticated"):
             continue
         source = Path(str(item.get("path") or ""))
         filename = str(item.get("filename") or source.name)
@@ -512,28 +578,6 @@ def _copy_public_screenshots(job_id: str, raw_capture: dict) -> None:
             shutil.copyfile(source, target)
 
 
-def _capture_to_dict(capture) -> dict:
-    try:
-        return cli_module.asdict(capture)
-    except TypeError:
-        keys = (
-            "url",
-            "cookies",
-            "local_storage",
-            "session_storage",
-            "scripts",
-            "requests",
-            "resources",
-            "links",
-            "visible_text",
-            "browser_signals",
-            "visited_urls",
-            "screenshots",
-            "vision_reviews",
-        )
-        return {key: getattr(capture, key) for key in keys if hasattr(capture, key)}
-
-
 def _load_optional_json(path: Path) -> dict | None:
     if not path.exists():
         return None
@@ -542,3 +586,7 @@ def _load_optional_json(path: Path) -> dict | None:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+app.include_router(public)
+app.include_router(protected)

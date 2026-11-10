@@ -28,21 +28,27 @@ Commands
 - vidis check --document agb.html --document avv.pdf [--privacy-url https://example.com/datenschutz] [--agb-url https://example.com/agb] [--avv-url https://example.com/avv]
 - vidis check --code-path /path/to/repo
 - vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
-- vidis serve  # FastAPI
+- vidis serve  # API, see below
 
 Cookie and storage classification
 - Cookie/browser-storage checks use a bundled copy of the Open Cookie Database EDPB: https://github.com/jkwakman/Open-Cookie-Database/blob/master/open-cookie-database-edpb.json
 - Update the bundled copy with `uv run python scripts/update_cookie_db.py`.
 
 API automation
-- `uv run vidis serve --host 127.0.0.1 --port 8645` starts the FastAPI server.
-- Local development is open by default. Set `VIDIS_API_KEY` to require `Authorization: Bearer ***` on every endpoint.
-- `POST /jobs` starts an async check and returns a status URL.
+- `VIDIS_API_KEYS=key1,key2 uv run vidis serve --host 0.0.0.0 --port 8645` starts the API. Without keys, `vidis serve` only runs on 127.0.0.1 and is open there.
+- Every `/jobs` endpoint requires `Authorization: Bearer <key>` or `X-API-Key: <key>`. Without configured keys the job endpoints answer 503 unless `VIDIS_AUTH_DISABLED=1`.
+- `GET /discovery` (also `/.well-known/vidis-checks`) is public and lists every available check with its criteria and required inputs, plus endpoints and auth schemes. `/health`, `/criteria`, `/docs` and `/openapi.json` are public too.
+- `POST /jobs` starts an async check with the same checks as `vidis check` and returns a status URL.
 - `GET /jobs?status=completed&limit=100&offset=0` lists persisted jobs without embedding full result payloads.
 - `GET /jobs/<job_id>` returns job metadata, result, report links, and artifact links.
-- Public screenshot evidence from site crawls is exposed as safe `screenshot_*` artifact links; authenticated/local-only screenshots stay on disk for review and are not exported through the API unless explicitly allowed by the artifact policy.
+- Public screenshot evidence from site crawls is exposed as `screenshot_*` artifact links; screenshots from logged-in areas stay on the server.
 - `POST /jobs/<job_id>/reports` creates `report.md` or `report.pdf` for completed jobs.
-- `GET /jobs/<job_id>/archive.zip` downloads the bounded evidence package (`job.json`, `result.json`, allowed captures, and reports) while excluding arbitrary files/secrets.
+- `GET /jobs/<job_id>/archive.zip` downloads the bounded evidence package (`job.json`, `result.json`, allowed captures, and reports).
+- Targets in private networks are refused (`VIDIS_ALLOW_PRIVATE_TARGETS=1` allows them); `VIDIS_ALLOWED_PATH_ROOTS` limits `code_path`/`document_paths` to given directories.
+
+Deployment (Docker, Coolify)
+- `VIDIS_API_KEYS="$(openssl rand -hex 32)" docker compose up -d --build` runs the API with Chromium on port 8645.
+- Coolify: create an application with the Docker Compose build pack, set `VIDIS_API_KEYS`, and give the `vidis-checker` service a domain on port 8645. Results persist in the `vidis-results` volume.
 
 Document checks
 - `--document PATH` can be repeated for local HTML, text/Markdown, or PDF files.
