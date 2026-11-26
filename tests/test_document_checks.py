@@ -113,7 +113,7 @@ def test_cli_check_document_inputs_outputs_document_capture_and_replaces_placeho
     payload = json.loads((tmp_path / "results" / "docjob" / "result.json").read_text(encoding="utf-8"))
     by_code = {finding["criterion"]: finding for finding in payload["findings"]}
     for code in ["RDS-AGB-368", "RDS-AGB-369", "RDS-SPE-370", "RDS-DEV-380", "RDS-DEV-381", "RDS-DEV-466", "RDS-DSO-383"]:
-        assert by_code[code]["note"] != "Not yet implemented"
+        assert by_code[code]["check"] is not None and by_code[code]["reason"] not in {"not_automated", "missing_input"}
     assert by_code["RDS-AGB-369"]["status"] == "PASS"
     assert (tmp_path / "results" / "docjob" / "document_capture.json").exists()
 

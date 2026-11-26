@@ -42,8 +42,10 @@ def sign(secret: str, timestamp: str, body: bytes) -> str:
 def build_payload(metadata: Any, base_url: str) -> dict[str, Any]:
     job_id = metadata.id
     counts: Counter[str] = Counter()
+    reasons: Counter[str] = Counter()
     if metadata.result is not None:
         counts.update(finding.status for finding in metadata.result.findings)
+        reasons.update(finding.reason or "automated" for finding in metadata.result.findings)
     base = base_url.rstrip("/")
     return {
         "event": EVENT,
@@ -53,7 +55,11 @@ def build_payload(metadata: Any, base_url: str) -> dict[str, Any]:
         "finished_at": metadata.updated_at,
         "checks": list(metadata.request.checks),
         "target_url": str(metadata.request.target_url) if metadata.request.target_url else None,
-        "summary": {"findings": sum(counts.values()), **{status: counts.get(status, 0) for status in ("PASS", "FAIL", "MANUELL")}},
+        "summary": {
+            "findings": sum(counts.values()),
+            **{status: counts.get(status, 0) for status in ("PASS", "FAIL", "MANUELL")},
+            "reasons": dict(sorted(reasons.items())),
+        },
         "links": {
             "job": f"{base}/jobs/{job_id}",
             "reports": f"{base}/jobs/{job_id}/reports",

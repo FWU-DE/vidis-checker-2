@@ -39,6 +39,7 @@ from .sources.code.inspect import inspect_code_path
 from .sources.documents.analyze import DOCUMENT_CRITERIA, DocumentInput, analyze_documents, build_document_inputs, extract_text, fetch_document
 from .evidence import run_lighthouse, write_webinspector_exports
 from .coverage_matrix import write_coverage_matrix
+from . import finding_details
 from .catalog import CRAWL_FREE_SITE_CHECKS, criteria_for_checks, resolve_check_selection
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
@@ -326,10 +327,12 @@ def run_checks(
     agent_capture = None
     document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
     document_discovery = None
-    if url and want("documents.analysis"):
+    if url and (want("documents.analysis") or want("site.cookie_descriptions")):
         # Callers test along the criteria with just the site; find what they did not supply.
+        # The cookie-description check only needs the privacy policy.
         supplied = {document.kind for document in document_inputs}
-        wanted = tuple(kind for kind in DOCUMENT_KINDS if kind not in supplied)
+        kinds = DOCUMENT_KINDS if want("documents.analysis") else ("privacy",)
+        wanted = tuple(kind for kind in kinds if kind not in supplied)
         if wanted:
             document_discovery = discover_document_links(url, wanted=wanted)
             document_inputs += [
@@ -434,8 +437,10 @@ def run_checks(
             "privacy_dpo_absent_declared": ipf_analysis.privacy.dpo_absent_declared,
         }
         findings.extend(findings_from_ipf_analysis(ipf_analysis))
+    finding_details.tag_site(findings)
     if code_path and want("code.inspection"):
         code_findings, code_capture = inspect_code_path(code_path, audience)
+        finding_details.tag(code_findings, "code.inspection")
         if raw_capture is None:
             raw_capture = {}
         raw_capture["code_review"] = code_capture
@@ -451,11 +456,22 @@ def run_checks(
         )
         by_criterion = {finding.criterion: finding for finding in findings}
         for code in DOCUMENT_CRITERIA:
-            by_criterion.setdefault(code, CheckFinding(criterion=code, status="MANUELL", note=note))
+            by_criterion.setdefault(
+                code,
+                CheckFinding(
+                    criterion=code,
+                    status="MANUELL",
+                    note=note,
+                    reason="missing_input",
+                    check="documents.analysis",
+                    review_hint="AGB, Datenschutzerklärung oder AVV per URL mitgeben (agb_url, privacy_url, avv_url) oder manuell prüfen.",
+                ),
+            )
         findings = list(by_criterion.values())
         document_capture = {"discovery": document_discovery, "documents": [], "skipped": []}
     if document_inputs and want("documents.analysis"):
         document_findings, document_capture = analyze_documents(document_inputs)
+        finding_details.tag(document_findings, "documents.analysis")
         if document_discovery is not None:
             document_capture["discovery"] = document_discovery
         by_criterion = {finding.criterion: finding for finding in findings}
@@ -507,11 +523,11 @@ def run_checks(
         agent_capture = write_agentic_artifacts(agent_result, outdir / "agent", [username, password])
         raw_capture = _merge_agentic_report_capture(raw_capture, agent_capture, outdir / "agent", outdir)
         by_criterion = {finding.criterion: finding for finding in findings}
-        for finding in _agentic_signal_findings(agent_capture, audience):
+        for finding in finding_details.tag(_agentic_signal_findings(agent_capture, audience), "agentic.persona_crawl"):
             existing = by_criterion.get(finding.criterion)
             if existing is None or existing.status == "MANUELL":
                 by_criterion[finding.criterion] = finding
-        for finding in _agentic_ipf_findings(agent_capture):
+        for finding in finding_details.tag(_agentic_ipf_findings(agent_capture), "agentic.persona_crawl"):
             existing = by_criterion.get(finding.criterion)
             if existing is None or existing.status in {"MANUELL", "FAIL"}:
                 by_criterion[finding.criterion] = finding
@@ -524,7 +540,19 @@ def run_checks(
         if selected is not None and k not in criteria_for_checks(selected):
             continue
         if k not in wired:
-            findings.append(CheckFinding(criterion=k, status="MANUELL", note="Not yet implemented"))
+            findings.append(
+                finding_details.placeholder(
+                    k, inputs={"site": bool(url), "documents": bool(url or document_inputs), "code": bool(code_path)}
+                )
+            )
+    finding_details.tag_site(findings)
+    finding_details.annotate(
+        findings,
+        raw_capture=raw_capture,
+        document_capture=document_capture,
+        code_capture=code_capture,
+        agent_capture=agent_capture,
+    )
     result = JobResult(job_id=cfg.job_id, findings=findings)
     raw_capture = _append_ai_model_metadata(raw_capture, ai_model)
     return CheckRun(

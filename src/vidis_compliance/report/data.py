@@ -216,6 +216,7 @@ def build_report_document(
 
 
 def _normalize_report_finding(finding: CheckFinding) -> CheckFinding:
+    # Results stored before findings had a reason still carry the old placeholder text.
     if finding.status == "MANUELL" and finding.note.strip() == "Not yet implemented":
         return CheckFinding(
             criterion=finding.criterion,

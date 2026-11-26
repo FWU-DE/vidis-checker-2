@@ -168,6 +168,10 @@
       vertical-align: top;
     }
     th { color: var(--accent); font-size: 0.86rem; }
+    .table-wrap { overflow-x: auto; }
+    .table-wrap table { min-width: 720px; }
+    .table-wrap td code, .table-wrap th code { overflow-wrap: normal; white-space: nowrap; }
+    .table-wrap td.ev code { white-space: normal; overflow-wrap: anywhere; }
     .note {
       border-left: 4px solid var(--accent);
       padding: 10px 12px;
@@ -470,9 +474,90 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
         <div class="status"><strong class="fail">FAIL</strong><br>Automatisch klare Gegen-Evidenz gefunden.</div>
         <div class="status"><strong class="manual">MANUELL</strong><br>Keine belastbare automatische Entscheidung; menschliche Prüfung nötig.</div>
       </div>
+      <h3>Aufbau eines Befunds</h3>
+      <p>Jeder Befund in <code>result.findings</code> (API: <code>GET /jobs/&lt;id&gt;</code>) hat dieselben Felder. Die drei Status bleiben PASS, FAIL und MANUELL; <code>reason</code> unterscheidet, welche Art manueller Arbeit ein MANUELL bedeutet.</p>
+      <pre><code>{
+  "criterion": "RDS-CUC-374",
+  "status": "MANUELL",
+  "reason": "needs_review",
+  "check": "site.browser_storage",
+  "note": "Unbekannter Browser-Storage: acme.widgetState",
+  "evidence": {"pages": ["https://anbieter.example/"], "local_storage_keys": ["acme.widgetState"], "session_storage_keys": []},
+  "review_hint": "Zweck der Storage-Schlüssel klären: funktional oder Tracking/Profilbildung?",
+  "artifacts": ["/jobs/&lt;id&gt;/artifacts/capture.json"]
+}</code></pre>
+      <ul>
+        <li><code>check</code>: die Prüfung, die den Befund erzeugt hat; <code>null</code>, wenn keine Prüfung das Kriterium abdeckt.</li>
+        <li><code>evidence</code>: die Daten hinter dem Befund (Listen höchstens 50 Einträge, Texte höchstens 300 Zeichen). Welche Schlüssel vorkommen können, steht unten je Prüfung und in <code>/discovery</code> unter <code>checks[].evidence_keys</code>.</li>
+        <li><code>review_hint</code>: was bei MANUELL zu prüfen ist; bei PASS/FAIL leer.</li>
+        <li><code>artifacts</code>: Download-Links zu den vollständigen Belegen (mit API-Schlüssel), etwa <code>capture.json</code>, <code>document_capture.json</code> oder öffentliche Screenshots.</li>
+      </ul>
+      <table>
+        <thead><tr><th><code>reason</code></th><th>Bedeutung</th></tr></thead>
+        <tbody>
+          <tr><td><code>automated</code></td><td>PASS oder FAIL wurde automatisch entschieden.</td></tr>
+          <tr><td><code>needs_review</code></td><td>Die Prüfung lief, der Befund ist nicht eindeutig: ein Mensch entscheidet anhand von evidence, review_hint und artifacts.</td></tr>
+          <tr><td><code>not_automated</code></td><td>Für das Kriterium gibt es keine automatische Prüfung; es ist immer manuell zu bewerten.</td></tr>
+          <tr><td><code>missing_input</code></td><td>Eine Eingabe fehlte (etwa Dokument-URL oder Login), oder die zuständige Prüfung war nicht ausgewählt; die Notiz nennt was.</td></tr>
+          <tr><td><code>not_reachable</code></td><td>Eine Seite oder ein Dokument war nicht abrufbar.</td></tr>
+        </tbody>
+      </table>
+      <p>Der Callback zählt die Befunde je Grund unter <code>summary.reasons</code>.</p>
+      <h3>Mögliche Ergebnisse je Prüfung</h3>
+      <p>Diese Tabelle steht maschinenlesbar in <code>/discovery</code> und <code>/checks</code> unter <code>outcomes</code> und <code>evidence_keys</code>. Zusätzlich kann jedes Kriterium <code>MANUELL</code> mit <code>missing_input</code> sein, wenn die zuständige Prüfung im Lauf fehlte (etwa <code>RDS-CUC-453</code> bei <code>documents.analysis</code> allein: dafür <code>site.cookie_descriptions</code> aufrufen), oder mit <code>not_reachable</code>, wenn eine Seite nicht abrufbar war.</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Prüfung</th><th>Status</th><th><code>reason</code></th><th>Wann</th><th><code>evidence</code></th></tr></thead>
+        <tbody>
+          <tr><td rowspan="3"><code>site.cookies</code><br><small>RDS-CUC-371, RDS-CUC-372</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Alle Cookies und Storage-Einträge sind laut Open Cookie Database oder Allowlist technisch notwendig.</td><td rowspan="3" class="ev"><code>pages</code>, <code>cookies</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Nicht notwendige Cookies bei Zielgruppe SuS oder beide.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Nicht notwendige Cookies bei Zielgruppe Lehrkräfte (Einwilligung?), unbekannte Cookies oder gar keine Cookies erkannt.</td></tr>
+          <tr><td rowspan="3"><code>site.tracking_pixel</code><br><small>RDS-CUC-373</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine bekannten Tracker in den Anfragen.</td><td rowspan="3" class="ev"><code>pages</code>, <code>third_party_hosts</code>, <code>requests</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Tracker erkannt bei Zielgruppe SuS oder beide.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Tracker erkannt bei Zielgruppe Lehrkräfte (Einwilligung?).</td></tr>
+          <tr><td rowspan="3"><code>site.browser_storage</code><br><small>RDS-CUC-374</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Kein Local/Session Storage, oder alle Schlüssel sind als notwendig bekannt.</td><td rowspan="3" class="ev"><code>pages</code>, <code>local_storage_keys</code>, <code>session_storage_keys</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Nicht notwendige Schlüssel bei Zielgruppe SuS oder beide.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Unbekannte Schlüssel, oder nicht notwendige bei Zielgruppe Lehrkräfte.</td></tr>
+          <tr><td rowspan="3"><code>site.device_storage</code><br><small>RDS-CUC-375</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine oder nur technisch nötige Zugriffe auf IndexedDB, Cache Storage, Service Worker.</td><td rowspan="3" class="ev"><code>pages</code>, <code>browser_signals</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Tracking-Zugriffe bei Zielgruppe SuS oder beide.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Zweck der Zugriffe nicht bestimmbar, oder Tracking bei Zielgruppe Lehrkräfte.</td></tr>
+          <tr><td rowspan="2"><code>site.fingerprinting</code><br><small>RDS-CUC-376</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Fingerprinting-APIs (Canvas, WebGL, AudioContext …) aufgerufen.</td><td rowspan="2" class="ev"><code>pages</code>, <code>browser_signals</code></td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Solche APIs wurden aufgerufen; ob zum Fingerprinting, muss ein Mensch beurteilen.</td></tr>
+          <tr><td rowspan="3"><code>site.tracking_mechanisms</code><br><small>RDS-CUC-377</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Trackingmechanismen, oder die Produktdokumente nennen einen pädagogischen Zweck.</td><td rowspan="3" class="ev"><code>pages</code>, <code>third_party_hosts</code>, <code>requests</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Tracking ohne belegten pädagogischen Zweck bei Zielgruppe SuS oder beide.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Tracking bei Zielgruppe Lehrkräfte oder Zweck unklar.</td></tr>
+          <tr><td rowspan="4"><code>site.cookie_descriptions</code><br><small>RDS-CUC-453</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Jedes gefundene Cookie und jeder Storage-Schlüssel steht in der Datenschutzerklärung.</td><td rowspan="4" class="ev"><code>pages</code>, <code>observed</code>, <code>present</code>, <code>missing</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Mindestens eines fehlt in der Datenschutzerklärung (in evidence.missing).</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Keine Cookies oder Storage-Einträge gefunden, also nichts abzugleichen.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>missing_input</code></td><td>Keine Datenschutzerklärung gefunden oder mitgegeben (privacy_url).</td></tr>
+          <tr><td rowspan="2"><code>site.advertising</code><br><small>RDS-WER-384</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Werbenetzwerke, Anzeigen-Widgets oder Sponsoring-Hinweise.</td><td rowspan="2" class="ev"><code>pages</code>, <code>vision_reviews</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Werbesignale erkannt.</td></tr>
+          <tr><td rowspan="2"><code>site.outbound_ad_links</code><br><small>RDS-WER-385</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Affiliate- oder Werbelinks erkannt.</td><td rowspan="2" class="ev"><code>pages</code>, <code>external_links</code>, <code>vision_reviews</code></td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Mögliche Werbelinks; Ziel prüfen.</td></tr>
+          <tr><td rowspan="3"><code>site.youth_protection</code><br><small>RDS-VIN-354</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine 18+-, Glücksspiel-, Gewalt- oder riskanten Embed-Signale.</td><td rowspan="3" class="ev"><code>pages</code>, <code>vision_reviews</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Risikosignale erkannt.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Eingebettete Inhalte, die ein Mensch ansehen muss.</td></tr>
+          <tr><td rowspan="3"><code>site.transport</code><br><small>ITS-ENC-359, ITS-ENC-360, ITS-ENC-361</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>HTTPS erreichbar, HTTP leitet um oder ist zu, alte TLS-Versionen abgelehnt.</td><td rowspan="3" class="ev"><code>pages</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>HTTP liefert Inhalte ohne Umleitung, HTTPS fehlt oder alte TLS-Versionen werden angenommen.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>TLS-Versionen ließen sich nicht prüfen (ITS-ENC-361).</td></tr>
+          <tr><td rowspan="2"><code>site.legal_pages</code><br><small>RDS-IPF-364, RDS-IPF-365, RDS-IPF-366, RDS-IPF-367</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Impressum/Datenschutzerklärung gefunden, erreichbar und mit den Pflichtangaben.</td><td rowspan="2" class="ev"><code>impressum_url</code>, <code>privacy_url</code>, <code>impressum_found</code>, <code>impressum_missing</code>, <code>impressum_manual</code>, <code>privacy_found</code>, <code>privacy_missing</code>, <code>privacy_manual</code>, <code>privacy_dpo_absent_declared</code>, <code>visited_urls</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Nicht gefunden, nicht erreichbar oder Pflichtangaben fehlen (in evidence.*_missing).</td></tr>
+          <tr><td rowspan="3"><code>code.inspection</code><br><small>RDS-CDN-379, RDS-CUC-371, RDS-CUC-372, RDS-CUC-373, RDS-CUC-374, RDS-CUC-375, RDS-CUC-376, RDS-CUC-377, RDS-DEV-380, RDS-IPF-364, RDS-IPF-365</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine einschlägigen Signale im Quellcode.</td><td rowspan="3" class="ev"><code>files_scanned</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Einschlägige Signale gefunden, oder der Code-Pfad existiert nicht.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Signale gefunden, deren Zweck ein Mensch beurteilen muss.</td></tr>
+          <tr><td rowspan="4"><code>documents.analysis</code><br><small>RDS-DEV-380, RDS-DEV-381, RDS-DEV-466, RDS-DSO-383, RDS-AGB-368, RDS-AGB-369, RDS-SPE-370, RDS-CUC-377, RDS-CUC-453</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Ausdrückliche Regelung im Dokument gefunden (Textstellen in evidence.snippets).</td><td rowspan="4" class="ev"><code>documents</code>, <code>snippets</code>, <code>discovery</code>, <code>skipped</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Das Dokument widerspricht dem Kriterium.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Dokument gelesen, aber keine ausdrückliche Regelung gefunden.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>missing_input</code></td><td>Keine AGB, Datenschutzerklärung oder AVV gefunden; URL mitgeben.</td></tr>
+          <tr><td rowspan="3"><code>agentic.persona_crawl</code><br><small>RDS-CUC-371, RDS-CUC-372, RDS-CUC-373, RDS-CUC-374, RDS-CUC-375, RDS-CUC-376, RDS-CUC-377, RDS-CUC-453, RDS-WER-384, RDS-WER-385, RDS-VIN-354, RDS-IPF-364, RDS-IPF-365, RDS-IPF-366, RDS-IPF-367, RDS-DSO-383</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Belege aus dem angemeldeten Bereich bestätigen das Kriterium.</td><td rowspan="3" class="ev"><code>visited_urls</code></td></tr>
+          <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Belege aus dem angemeldeten Bereich widersprechen ihm.</td></tr>
+          <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Belege gesammelt, ein Mensch muss sie beurteilen.</td></tr>
+        </tbody>
+      </table>
+      </div>
       <h3>Typische Dateien</h3>
       <ul>
-        <li><code>results/&lt;job_id&gt;/result.json</code> – maschinenlesbare Findings pro VIDIS-Kriterium.</li>
+        <li><code>results/&lt;job_id&gt;/result.json</code> – maschinenlesbare Findings pro VIDIS-Kriterium, im Aufbau wie oben.</li>
         <li><code>results/&lt;job_id&gt;/capture.json</code> – Browser-/Website-Signale wie Requests, Cookies, Storage, Scripts, Screenshot-Metadaten und konservative Vision-Review-Hinweise.</li>
         <li><code>results/&lt;job_id&gt;/screenshots/*.png</code> – öffentliche Screenshot-Belege; authentifizierte Screenshots werden als <code>local_only</code> markiert und nicht über die API ausgeliefert.</li>
         <li><code>results/&lt;job_id&gt;/code_capture.json</code> – statische Code-Signale.</li>
