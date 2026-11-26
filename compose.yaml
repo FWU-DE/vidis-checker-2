@@ -13,6 +13,14 @@ services:
       VIDIS_AGENT_USERNAME: ${VIDIS_AGENT_USERNAME:-}
       VIDIS_AGENT_PASSWORD: ${VIDIS_AGENT_PASSWORD:-}
       VIDIS_AGENT_VIDIS_PORTAL: ${VIDIS_AGENT_VIDIS_PORTAL:-}
+      # Optional: Gemini on Vertex AI for screenshot reviews. Without a key the
+      # checks stay fully deterministic.
+      GOOGLE_SA_JSON: ${GOOGLE_SA_JSON:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      VIDIS_LLM_MODEL_FAST: ${VIDIS_LLM_MODEL_FAST:-}
+      VIDIS_LLM_MODEL_STRONG: ${VIDIS_LLM_MODEL_STRONG:-}
+      VIDIS_LLM_DISABLED: ${VIDIS_LLM_DISABLED:-}
     expose:
       - "8645"
     volumes:
