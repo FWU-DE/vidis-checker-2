@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as package_version
 from io import BytesIO
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response, Security, status
@@ -24,6 +24,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
+from . import callbacks
 from . import cli as cli_module
 from .catalog import CHECK_IDS, CHECKS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
@@ -75,7 +76,7 @@ async def _validation_error(request: Request, exc: RequestValidationError) -> Ut
 JobStatus = Literal["queued", "running", "completed", "failed"]
 ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "agent_capture.json", "job.json"}
 ALLOWED_REPORTS = {"report.md", "report.pdf"}
-_STORE_LOCK = threading.Lock()
+_STORE_LOCK = threading.RLock()
 _JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get("VIDIS_JOB_WORKERS", "4")))
 
 
@@ -102,6 +103,18 @@ class JobCreateRequest(BaseModel):
         ge=0,
         le=86400,
         description="Browser-Crawl derselben URL und Seitenzahl wiederverwenden, wenn er jünger ist (Sekunden). 0 erzwingt einen frischen Crawl.",
+    )
+    callback_url: HttpUrl | None = Field(
+        default=None,
+        description="Wird per POST aufgerufen, sobald der Job fertig ist (completed oder failed). Nur öffentliche HTTPS-Adressen.",
+    )
+    callback_secret: str | None = Field(
+        default=None,
+        min_length=16,
+        max_length=200,
+        exclude=True,
+        repr=False,
+        description="Optional: signiert den Callback mit HMAC-SHA256 (Header X-VIDIS-Signature). Wird nicht gespeichert.",
     )
     lighthouse: bool = False
     webinspector_export: bool = False
@@ -138,6 +151,10 @@ class JobCreateRequest(BaseModel):
             raise ValueError("agentic mode requires target_url")
         self.checks = list(dict.fromkeys(self.checks))
         _validate_check_selection(self)
+        if self.callback_url is not None:
+            _require_callback_target(str(self.callback_url))
+        if self.callback_secret and self.callback_url is None:
+            raise ValueError("callback_secret requires callback_url")
         return self
 
 
@@ -167,6 +184,18 @@ class CheckRunRequest(BaseModel):
         le=86400,
         description="Browser-Crawl derselben URL und Seitenzahl wiederverwenden, wenn er jünger ist (Sekunden). 0 erzwingt einen frischen Crawl.",
     )
+    callback_url: HttpUrl | None = Field(
+        default=None,
+        description="Wird per POST aufgerufen, sobald der Job fertig ist (completed oder failed). Nur öffentliche HTTPS-Adressen.",
+    )
+    callback_secret: str | None = Field(
+        default=None,
+        min_length=16,
+        max_length=200,
+        exclude=True,
+        repr=False,
+        description="Optional: signiert den Callback mit HMAC-SHA256 (Header X-VIDIS-Signature). Wird nicht gespeichert.",
+    )
 
 
 def _validate_check_selection(request: "JobCreateRequest") -> None:
@@ -195,6 +224,7 @@ class JobMetadata(BaseModel):
     error: str | None = None
     artifacts: dict[str, str] = Field(default_factory=dict)
     reports: dict[str, str] = Field(default_factory=dict)
+    callback: dict[str, Any] | None = None
 
 
 class JobSummary(BaseModel):
@@ -359,6 +389,15 @@ def discovery(request: Request):
             **llm_status(),
             "use": "Bewertet öffentliche Screenshots als zusätzlichen Hinweis im Bericht; ändert keine PASS/FAIL-Ergebnisse. Screenshots aus angemeldeten Bereichen werden nie gesendet.",
         },
+        "callbacks": {
+            "request_fields": ["callback_url", "callback_secret"],
+            "method": "POST",
+            "event": callbacks.EVENT,
+            "headers": ["X-VIDIS-Event", "X-VIDIS-Delivery", "X-VIDIS-Timestamp", "X-VIDIS-Signature"],
+            "signature": "sha256=HMAC-SHA256(callback_secret, '<X-VIDIS-Timestamp>.<body>') als Hex",
+            "retries": list(callbacks.RETRY_DELAYS_SECONDS),
+            "note": "Der Body enthält Status, Zusammenfassung und Links, nicht das ganze Ergebnis; Details per GET /jobs/{job_id} mit API-Schlüssel.",
+        },
         "crawl_cache": {
             "default_max_age_seconds": 1800,
             "request_field": "crawl_max_age",
@@ -384,7 +423,7 @@ def get_check_definition(check_id: str):
 
 
 @protected.post("/checks/{check_id}", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
-def run_single_check(check_id: str, body: CheckRunRequest) -> JobCreatedResponse:
+def run_single_check(check_id: str, body: CheckRunRequest, http_request: Request) -> JobCreatedResponse:
     """Start a job that runs only this check; the result holds only its criteria."""
     _check_or_404(check_id)
     data = body.model_dump()
@@ -396,7 +435,8 @@ def run_single_check(check_id: str, body: CheckRunRequest) -> JobCreatedResponse
     except ValidationError as exc:
         raise RequestValidationError(exc.errors(include_url=False)) from exc
     request.agent_password = body.agent_password
-    return create_job(request)
+    request.callback_secret = body.callback_secret
+    return create_job(request, http_request)
 
 
 def _check_or_404(check_id: str):
@@ -407,7 +447,7 @@ def _check_or_404(check_id: str):
 
 
 @protected.post("/jobs", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
-def create_job(request: JobCreateRequest) -> JobCreatedResponse:
+def create_job(request: JobCreateRequest, http_request: Request) -> JobCreatedResponse:
     job_id = uuid.uuid4().hex
     metadata = JobMetadata(
         id=job_id,
@@ -419,7 +459,7 @@ def create_job(request: JobCreateRequest) -> JobCreatedResponse:
     _job_dir(job_id).mkdir(parents=True, exist_ok=False)
     _write_metadata(metadata)
     # The request object still carries agent_password, which is never written to disk.
-    _JOB_EXECUTOR.submit(_run_job, job_id, request)
+    _JOB_EXECUTOR.submit(_run_job, job_id, request, _public_base_url(http_request))
     return JobCreatedResponse(id=job_id, status=metadata.status, status_url=f"/jobs/{job_id}")
 
 
@@ -508,7 +548,7 @@ def get_archive(job_id: str):
     )
 
 
-def _run_job(job_id: str, request: JobCreateRequest | None = None) -> None:
+def _run_job(job_id: str, request: JobCreateRequest | None = None, base_url: str = "") -> None:
     metadata = _read_metadata(job_id)
     if request is not None:
         metadata.request = request
@@ -550,6 +590,53 @@ def _run_job(job_id: str, request: JobCreateRequest | None = None) -> None:
     finally:
         metadata.updated_at = _now()
         _write_metadata(metadata)
+    callback_request = request or metadata.request
+    if callback_request.callback_url is not None:
+        _schedule_callback(metadata, str(callback_request.callback_url), callback_request.callback_secret, base_url)
+
+
+def _schedule_callback(metadata: JobMetadata, url: str, secret: str | None, base_url: str) -> None:
+    payload = callbacks.build_payload(metadata, base_url)
+    _update_callback(metadata.id, {"url": url, "delivered": False, "attempts": 0, "pending": True})
+
+    def send() -> None:
+        record = callbacks.deliver(url, payload, secret=secret, check_target=_require_callback_target)
+        _update_callback(metadata.id, record)
+
+    callbacks.submit(send)
+
+
+def _update_callback(job_id: str, record: dict[str, Any]) -> None:
+    with _STORE_LOCK:
+        current = _read_metadata(job_id)
+        current.callback = record
+        _write_metadata(current)
+
+
+def _public_base_url(request: Request) -> str:
+    configured = os.environ.get("VIDIS_PUBLIC_URL", "").strip()
+    if configured:
+        return configured.rstrip("/")
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}".rstrip("/")
+
+
+def _require_callback_target(url: str) -> None:
+    """Callbacks go only to public HTTPS hosts that resolve right now."""
+    if _env_flag("VIDIS_ALLOW_PRIVATE_TARGETS"):
+        return
+    parts = urlsplit(url)
+    if parts.scheme != "https":
+        raise ValueError("callback_url must use https")
+    host = parts.hostname or ""
+    try:
+        infos = socket.getaddrinfo(host, parts.port or 443)
+    except (socket.gaierror, UnicodeError) as exc:
+        raise ValueError(f"callback host does not resolve: {host}") from exc
+    _require_public_target(url)
+    if not infos:
+        raise ValueError(f"callback host does not resolve: {host}")
 
 
 def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None, dict | None, dict | None]:

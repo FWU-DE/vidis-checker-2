@@ -397,6 +397,30 @@ uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
       <h3>Dienststatus</h3>
       <pre><code>curl https://vidis-checker.example/status</code></pre>
       <p><code>GET /status</code> (ohne Schlüssel) fragt bei Vertex AI kostenlos ab, welche der eingerichteten Modelle für das Projekt verfügbar sind (Endpunkt <code>countTokens</code>, es wird nichts erzeugt), und zeigt je Modell <code>available</code>, HTTP-Status, Antwortzeit und Stufe (<code>fast</code>/<code>strong</code>). Das Ergebnis gilt zehn Minuten; <code>?refresh=true</code> prüft neu, höchstens einmal pro Minute. Dazu kommen die Zahl der Jobs je Status, die Zahl paralleler Prüfungen und die Einträge im Crawl-Cache. Antwortet kein Modell, steht <code>status</code> auf <code>degraded</code>. <code>/health</code> bleibt eine billige Lebenszeichen-Abfrage und zeigt nur die letzte Modellprüfung, ohne selbst eine zu starten.</p>
+      <h3>Rückruf, wenn ein Job fertig ist</h3>
+      <p>Statt den Status abzufragen, kann man jedem Job (<code>POST /jobs</code> und <code>POST /checks/&lt;id&gt;</code>) eine <code>callback_url</code> mitgeben. Sobald der Job <code>completed</code> oder <code>failed</code> ist, schickt der Dienst dorthin einen <code>POST</code> mit JSON:</p>
+      <pre><code>{
+  "event": "job.finished",
+  "job_id": "…",
+  "status": "completed",
+  "error": null,
+  "finished_at": "2026-11-26T08:30:00+00:00",
+  "checks": ["site.transport"],
+  "target_url": "https://anbieter.example/",
+  "summary": {"findings": 3, "PASS": 1, "FAIL": 2, "MANUELL": 0},
+  "links": {"job": "https://vidis-checker.example/jobs/…", "reports": "…", "archive": "…"}
+}</code></pre>
+      <p>Der Rückruf enthält kein vollständiges Ergebnis; Details holt der Empfänger mit seinem API-Schlüssel über <code>links.job</code>. Mit <code>callback_secret</code> (16 bis 200 Zeichen, wird nicht gespeichert) ist der Rückruf signiert: <code>X-VIDIS-Signature: sha256=&lt;Hex&gt;</code> ist HMAC-SHA256 über <code>&lt;X-VIDIS-Timestamp&gt;.&lt;Body&gt;</code>. Weitere Header: <code>X-VIDIS-Event</code>, <code>X-VIDIS-Delivery</code> (gleich über alle Versuche).</p>
+      <pre><code>curl -X POST https://vidis-checker.example/checks/site.transport \
+  -H "X-API-Key: $VIDIS_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"target_url":"https://anbieter.example","callback_url":"https://empfaenger.example/vidis","callback_secret":"ein-langes-geheimnis-123"}'</code></pre>
+      <ul>
+        <li>Nur öffentliche <code>https</code>-Adressen; interne Ziele werden mit <code>422</code> abgelehnt und vor jedem Versuch erneut geprüft. Weiterleitungen werden nicht verfolgt.</li>
+        <li>Eine Antwort 2xx gilt als zugestellt. Bei Netzfehlern, 5xx, 408 oder 429 folgen bis zu drei weitere Versuche (nach 5 s, 30 s und 2 min); andere 4xx brechen sofort ab.</li>
+        <li><code>GET /jobs/&lt;id&gt;</code> zeigt unter <code>callback</code>, ob und wann zugestellt wurde, die Zahl der Versuche und den letzten HTTP-Status.</li>
+        <li>Die Links bauen auf <code>VIDIS_PUBLIC_URL</code> auf; ohne sie auf der Adresse, unter der der Job angelegt wurde.</li>
+      </ul>
       <h3>Job abfragen, Jobs auflisten, Bericht erzeugen</h3>
       <pre><code>curl -H "X-API-Key: $VIDIS_KEY" 'https://vidis-checker.example/jobs?status=completed&amp;limit=100&amp;offset=0'
 

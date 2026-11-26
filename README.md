@@ -45,6 +45,7 @@ API automation
 - A browser crawl of the same URL and page count is reused for 30 minutes (screenshots and their AI review included); `"crawl_max_age": 0` in a job (or `--crawl-max-age 0`) forces a fresh crawl.
 - Optional AI screenshot review with Gemini on Vertex AI: set `GOOGLE_SA_JSON` (service-account key JSON), optionally `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `VIDIS_LLM_MODEL_STRONG`/`VIDIS_LLM_MODEL_FAST`. It adds evidence to reports and never changes PASS/FAIL. `GET /health` shows the LLM status under `llm`.
 - `GET /status` (public) checks free of charge via Vertex `countTokens` which configured models are available (nothing is generated; cached 10 minutes, `?refresh=true` at most once a minute) and shows job counts and crawl-cache entries; `status` is `degraded` when no model answers.
+- `callback_url` (public HTTPS) in `POST /jobs` or `POST /checks/<id>` gets a `job.finished` POST with status, summary and links when the job ends; `callback_secret` signs it (`X-VIDIS-Signature: sha256=HMAC(secret, "<timestamp>.<body>")`). Retries on network errors/5xx; delivery state under `callback` in `GET /jobs/<id>`. `VIDIS_PUBLIC_URL` sets the base of the links.
 - `GET /jobs?status=completed&limit=100&offset=0` lists persisted jobs without embedding full result payloads.
 - `GET /jobs/<job_id>` returns job metadata, result, report links, and artifact links.
 - Public screenshot evidence from site crawls is exposed as `screenshot_*` artifact links; screenshots from logged-in areas stay on the server.
