@@ -112,8 +112,23 @@ def safe_get(
     """GET ``url`` following at most ``max_redirects`` redirects, each checked.
 
     Raises ``UnsafeTargetError`` for a non-public hop, ``ResponseTooLargeError``
-    past ``max_bytes`` and ``httpx.HTTPError`` for transport errors.
+    past ``max_bytes`` and ``httpx.HTTPError`` for transport errors. Inside
+    ``fetch_cache.active(...)`` a recent 2xx response comes from the cache.
     """
+    from . import fetch_cache
+
+    cache = fetch_cache.current()
+    if cache is None:
+        return _fetch(url, timeout=timeout, max_bytes=max_bytes, max_redirects=max_redirects, headers=headers)
+    return cache.get(
+        url,
+        headers,
+        max_bytes,
+        lambda: _fetch(url, timeout=timeout, max_bytes=max_bytes, max_redirects=max_redirects, headers=headers),
+    )
+
+
+def _fetch(url: str, *, timeout: float, max_bytes: int, max_redirects: int, headers: dict[str, str] | None) -> SafeResponse:
     # Uncompressed: some servers label bodies gzip that are not, which made whole sites unreadable.
     request_headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity", **(headers or {})}
     current = url

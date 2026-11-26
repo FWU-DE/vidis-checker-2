@@ -29,7 +29,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
-from . import callbacks, net
+from . import callbacks, fetch_cache, net
 from . import cli as cli_module
 from .catalog import CHECK_IDS, CHECKS, REASONS, checks_needed_for, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
@@ -94,6 +94,8 @@ logger = logging.getLogger("vidis_compliance.server")
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "agent_capture.json", "job.json"}
+# Optional exports in subfolders, served like the top-level artifacts.
+EXPORT_ARTIFACTS = {"webinspector/network.json", "webinspector/console.json", "webinspector/storage.json"}
 ALLOWED_REPORTS = {"report.md", "report.pdf"}
 _STORE_LOCK = threading.RLock()
 _JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get("VIDIS_JOB_WORKERS", "4")))
@@ -121,7 +123,7 @@ class JobCreateRequest(BaseModel):
         default=1800,
         ge=0,
         le=86400,
-        description="Browser-Crawl derselben URL und Seitenzahl wiederverwenden, wenn er jünger ist (Sekunden). 0 erzwingt einen frischen Crawl.",
+        description="Browser-Crawl derselben URL und Seitenzahl sowie abgerufene Rechtsseiten und Dokumente wiederverwenden, wenn jünger (Sekunden). 0 erzwingt frische Abrufe.",
     )
     callback_url: HttpUrl | None = Field(
         default=None,
@@ -201,7 +203,7 @@ class CheckRunRequest(BaseModel):
         default=1800,
         ge=0,
         le=86400,
-        description="Browser-Crawl derselben URL und Seitenzahl wiederverwenden, wenn er jünger ist (Sekunden). 0 erzwingt einen frischen Crawl.",
+        description="Browser-Crawl derselben URL und Seitenzahl sowie abgerufene Rechtsseiten und Dokumente wiederverwenden, wenn jünger (Sekunden). 0 erzwingt frische Abrufe.",
     )
     callback_url: HttpUrl | None = Field(
         default=None,
@@ -351,7 +353,13 @@ def service_status(refresh: bool = Query(default=False, description="Modelle sof
         llm["availability"] = llm_module.public_probe(llm_module.probe_models(force=refresh))
     counts = _job_counts()
     cache_dir = Path(os.environ.get("VIDIS_CRAWL_CACHE_DIR") or (_results_root() / ".crawl-cache"))
-    entries = [entry for entry in cache_dir.iterdir() if entry.is_dir() and not entry.name.startswith(".")] if cache_dir.is_dir() else []
+    entries = (
+        [e for e in cache_dir.iterdir() if e.is_dir() and not e.name.startswith(".") and e.name != fetch_cache.SUBDIR]
+        if cache_dir.is_dir()
+        else []
+    )
+    fetch_dir = cache_dir / fetch_cache.SUBDIR
+    fetched = len(list(fetch_dir.glob("*.json"))) if fetch_dir.is_dir() else 0
     degraded = bool(llm.get("configured")) and not any(
         model.get("available") for model in ((llm.get("availability") or {}).get("models") or {}).values()
     )
@@ -360,7 +368,7 @@ def service_status(refresh: bool = Query(default=False, description="Modelle sof
         "version": SERVICE_VERSION,
         "llm": llm,
         "jobs": {**counts, "workers": _JOB_EXECUTOR._max_workers},
-        "crawl_cache": {"entries": len(entries), "default_max_age_seconds": 1800},
+        "crawl_cache": {"entries": len(entries), "documents": fetched, "default_max_age_seconds": 1800},
     }
 
 
@@ -527,7 +535,10 @@ def discovery(request: Request):
         "crawl_cache": {
             "default_max_age_seconds": 1800,
             "request_field": "crawl_max_age",
-            "note": "Ein Browser-Crawl wird für dieselbe URL und Seitenzahl wiederverwendet; 0 erzwingt einen frischen Crawl.",
+            "note": (
+                "Ein Browser-Crawl wird für dieselbe URL und Seitenzahl wiederverwendet, ebenso abgerufene Rechtsseiten "
+                "und Dokumente (AGB, Datenschutzerklärung, AVV); 0 erzwingt frische Abrufe."
+            ),
         },
         "checks": checks,
         "criteria": criteria_items,
@@ -672,6 +683,10 @@ def get_archive(job_id: str, caller: Caller = Security(require_api_key)):
             if name == "job.json":
                 archive.writestr(name, _public_job_json(metadata))
             elif path.exists() and path.is_file():
+                archive.write(path, arcname=name)
+        for name in sorted(EXPORT_ARTIFACTS):
+            path = job_dir / name
+            if path.is_file():
                 archive.write(path, arcname=name)
         for report_name in sorted(ALLOWED_REPORTS):
             path = job_dir / report_name
@@ -980,7 +995,7 @@ def _safe_named_file(job_id: str, name: str, allowed: set[str]) -> Path:
         raise HTTPException(status_code=404, detail="file not found")
     if "/" not in name and name not in allowed:
         raise HTTPException(status_code=404, detail="file not found")
-    if "/" in name and not name.startswith("screenshots/"):
+    if "/" in name and not name.startswith("screenshots/") and name not in EXPORT_ARTIFACTS:
         raise HTTPException(status_code=404, detail="file not found")
     path = (_job_dir(job_id) / name).resolve()
     job_dir = _job_dir(job_id).resolve()
@@ -996,7 +1011,7 @@ def _link_finding_artifacts(job_id: str, result: JobResult) -> None:
         links = []
         for name in finding.artifacts:
             top = name.split("/", 1)[0]
-            allowed = name in ALLOWED_ARTIFACTS or (top == "screenshots" and name.endswith(".png"))
+            allowed = name in ALLOWED_ARTIFACTS or name in EXPORT_ARTIFACTS or (top == "screenshots" and name.endswith(".png"))
             if allowed and (job_dir / name).is_file():
                 links.append(f"/jobs/{job_id}/artifacts/{name}")
         finding.artifacts = links
@@ -1008,6 +1023,9 @@ def _artifact_urls(job_id: str) -> dict[str, str]:
         if (_job_dir(job_id) / name).exists():
             key = name.replace(".", "_")
             artifacts[key] = f"/jobs/{job_id}/artifacts/{name}"
+    for name in sorted(EXPORT_ARTIFACTS):
+        if (_job_dir(job_id) / name).is_file():
+            artifacts[name.replace("/", "_").replace(".", "_")] = f"/jobs/{job_id}/artifacts/{name}"
     screenshots_dir = _job_dir(job_id) / "screenshots"
     if screenshots_dir.exists():
         for path in sorted(screenshots_dir.glob("*.png")):

@@ -210,7 +210,7 @@ CHECKS: tuple[CheckDefinition, ...] = (
     CheckDefinition(
         id="evidence.webinspector",
         name="WebInspector-Export",
-        description="Exportiert Netzwerk-, Konsolen- und Storage-Daten als JSON.",
+        description="Exportiert Netzwerk-, Konsolen- und Storage-Daten als JSON; abrufbar unter /jobs/<id>/artifacts/webinspector/network.json, console.json und storage.json.",
         source="evidence",
         requires=_SITE,
         enabled_by="webinspector_export",

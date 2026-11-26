@@ -26,6 +26,7 @@ from .checks.site.ipf import DOCUMENT_KINDS, analyze_ipf_site, discover_document
 from .sources.site.crawl import crawl
 from .sources.site.vision import gemini_screenshot_provider, review_screenshots
 from .sources.site import crawl_cache
+from . import fetch_cache
 
 # Site checks whose criteria a screenshot review can give evidence for.
 VISION_CHECKS = frozenset({"site.advertising", "site.outbound_ad_links", "site.youth_protection"})
@@ -260,7 +261,29 @@ class CheckRun:
     agent_capture: dict[str, Any] | None = None
 
 
-def run_checks(
+def _cache_dir(cache_root: Path | None, outdir: Path) -> Path:
+    return Path(cache_root or os.environ.get("VIDIS_CRAWL_CACHE_DIR") or (Path(outdir).parent / ".crawl-cache"))
+
+
+def run_checks(**kwargs: Any) -> CheckRun:
+    """Run the checks (see ``_run_checks``) with HTTP fetches cached.
+
+    Legal pages and documents fetched within ``crawl_max_age`` seconds are
+    reused like the browser crawl; how many came from the cache is recorded
+    under ``fetch_cache`` in the captures.
+    """
+    max_age = kwargs.get("crawl_max_age", crawl_cache.DEFAULT_MAX_AGE_SECONDS)
+    cache = fetch_cache.FetchCache(_cache_dir(kwargs.get("cache_root"), kwargs["outdir"]) / fetch_cache.SUBDIR, max_age)
+    with fetch_cache.active(cache):
+        run = _run_checks(**kwargs)
+    if cache.hits or cache.misses:
+        for capture in (run.raw_capture, run.document_capture):
+            if capture is not None:
+                capture["fetch_cache"] = cache.stats()
+    return run
+
+
+def _run_checks(
     *,
     job_id: str,
     outdir: Path,
@@ -341,7 +364,7 @@ def run_checks(
     privacy_text_for_cookies = _extract_privacy_text_for_cookie_descriptions(document_inputs) if document_inputs else ""
     # Browser capture for cookie/storage-related VIDIS criteria.
     if url and needs_crawl:
-        cache_dir = cache_root or Path(os.environ.get("VIDIS_CRAWL_CACHE_DIR") or (outdir.parent / ".crawl-cache"))
+        cache_dir = _cache_dir(cache_root, outdir)
         cap, crawl_info = crawl_cache.cached_crawl(
             crawl, url=url, pages=pages, outdir=outdir, cache_root=cache_dir, max_age=crawl_max_age
         )
