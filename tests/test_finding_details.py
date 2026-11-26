@@ -239,3 +239,13 @@ def test_discovery_run_returns_only_its_criterion(client: TestClient) -> None:
     job = _run(client, run["path"], {**run["body"], "target_url": "https://app.example.test"})
 
     assert [f["criterion"] for f in job["result"]["findings"]] == ["RDS-IPF-365"]
+
+
+def test_jobs_results_and_captures_carry_the_api_version(client: TestClient) -> None:
+    from vidis_compliance.version import API_VERSION
+
+    job = _run(client, "/criteria/RDS-CUC-374", {"target_url": "https://app.example.test"})
+
+    assert job["api_version"] == API_VERSION
+    assert job["result"]["api_version"] == API_VERSION
+    assert client.get(f"/jobs/{job['id']}/artifacts/capture.json").json()["api_version"] == API_VERSION

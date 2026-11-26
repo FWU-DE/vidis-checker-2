@@ -1,6 +1,7 @@
 {
   "title": "VIDIS Coverage Matrix",
-  "generated_at": "2026-11-26T13:18:39+00:00",
+  "generated_at": "2026-11-26T13:59:27+00:00",
+  "api_version": "1.0.0",
   "criteria_registry": "src/vidis_compliance/criteria/vidis_v0_2.yaml",
   "columns": [
     "code",

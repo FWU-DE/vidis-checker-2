@@ -41,6 +41,7 @@ from .sources.documents.analyze import DOCUMENT_CRITERIA, DocumentInput, analyze
 from .evidence import run_lighthouse, write_webinspector_exports
 from .coverage_matrix import write_coverage_matrix
 from . import finding_details
+from .version import API_VERSION
 from .catalog import CRAWL_FREE_SITE_CHECKS, SITE_DECIDES_WITH_DOCUMENTS, checks_for_criteria, criteria_for_checks, resolve_check_selection
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
@@ -280,6 +281,9 @@ def run_checks(**kwargs: Any) -> CheckRun:
         for capture in (run.raw_capture, run.document_capture):
             if capture is not None:
                 capture["fetch_cache"] = cache.stats()
+    for capture in (run.raw_capture, run.code_capture, run.document_capture, run.agent_capture):
+        if capture is not None:
+            capture["api_version"] = API_VERSION
     return run
 
 
@@ -611,7 +615,7 @@ def _run_checks(
         code_capture=code_capture,
         agent_capture=agent_capture,
     )
-    result = JobResult(job_id=cfg.job_id, findings=findings)
+    result = JobResult(job_id=cfg.job_id, findings=findings, api_version=API_VERSION)
     raw_capture = _append_ai_model_metadata(raw_capture, ai_model)
     return CheckRun(
         result=result,

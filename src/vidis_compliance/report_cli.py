@@ -81,5 +81,16 @@ def coverage(
         typer.echo(str(path))
 
 
+@app.command()
+def contract():
+    """Write docs/contract.json for the current API version (refuses if the contract changed without a version bump)."""
+    from .contract import write_snapshot
+
+    try:
+        typer.echo(str(write_snapshot()))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 if __name__ == "__main__":
     app()
