@@ -19,10 +19,11 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response, Security, status
 from fastapi.responses import FileResponse
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
 from . import cli as cli_module
-from .catalog import CHECKS, checks_for_criterion, runtime_availability
+from .catalog import CHECK_IDS, CHECKS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
 from .models import JobResult
 from .report.markdown import generate_markdown
@@ -69,6 +70,12 @@ class JobCreateRequest(BaseModel):
     agent_instructions: list[str] = Field(default_factory=list, max_length=20)
     lighthouse: bool = False
     webinspector_export: bool = False
+    checks: list[str] = Field(
+        default_factory=list,
+        max_length=len(CHECK_IDS),
+        description="Nur diese Prüfungen ausführen (IDs aus GET /discovery). Leer: alle, die die Eingaben erlauben.",
+        examples=[["site.cookies", "site.transport"]],
+    )
 
     @model_validator(mode="after")
     def require_target(self) -> "JobCreateRequest":
@@ -94,7 +101,41 @@ class JobCreateRequest(BaseModel):
             raise ValueError("target_url, code_path, document_paths or document URL is required")
         if self.agentic and not self.target_url:
             raise ValueError("agentic mode requires target_url")
+        self.checks = list(dict.fromkeys(self.checks))
+        _validate_check_selection(self)
         return self
+
+
+class CheckRunRequest(BaseModel):
+    """Body for POST /checks/{check_id}: the job inputs without a check list."""
+
+    model_config = {"extra": "forbid"}
+
+    target_url: HttpUrl | None = None
+    code_path: str | None = None
+    document_paths: list[str] = Field(default_factory=list)
+    agb_url: HttpUrl | None = None
+    privacy_url: HttpUrl | None = None
+    avv_url: HttpUrl | None = None
+    target_audience: Literal["SuS", "Lehrkraefte", "beide"] = "beide"
+    pages: int = Field(default=8, ge=1, le=100)
+    agent_tasks: list[Literal["legal", "student", "teacher", "register", "logout"]] = Field(default_factory=list)
+    agent_username: str | None = None
+    agent_password: str | None = Field(default=None, exclude=True, repr=False)
+    agent_persona: Literal["SuS", "Lehrkraefte", "beide"] | None = None
+    agent_vidis_portal: str | None = Field(default=None, max_length=200)
+    agent_vidis_login_label: str | None = Field(default=None, max_length=200)
+    agent_instructions: list[str] = Field(default_factory=list, max_length=20)
+
+
+def _validate_check_selection(request: "JobCreateRequest") -> None:
+    resolve_check_selection(
+        request.checks,
+        has_url=request.target_url is not None,
+        has_code=bool(request.code_path),
+        has_documents=bool(request.document_paths or request.agb_url or request.privacy_url or request.avv_url),
+        flags={"agentic": request.agentic, "lighthouse": request.lighthouse, "webinspector_export": request.webinspector_export},
+    )
 
 
 class JobCreatedResponse(BaseModel):
@@ -194,6 +235,7 @@ def discovery(request: Request):
     for check in CHECKS:
         item = check.to_dict()
         item["available"] = available.get(check.id, True)
+        item["run"] = {"method": "POST", "path": f"/checks/{check.id}", "auth": True}
         checks.append(item)
     criteria_items = []
     for code, criterion in crit.items.items():
@@ -219,10 +261,13 @@ def discovery(request: Request):
                 {"type": "http", "scheme": "bearer", "header": "Authorization: Bearer <key>"},
                 {"type": "apiKey", "in": "header", "name": "X-API-Key"},
             ],
-            "public_paths": ["/health", "/discovery", "/.well-known/vidis-checks", "/criteria", "/docs", "/openapi.json"],
+            "public_paths": ["/health", "/discovery", "/.well-known/vidis-checks", "/criteria", "/checks", "/docs", "/openapi.json"],
         },
         "endpoints": [
-            {"method": "POST", "path": "/jobs", "auth": True, "description": "Prüfung starten (asynchron)"},
+            {"method": "POST", "path": "/jobs", "auth": True, "description": "Prüfung starten (asynchron); optional nur einzelne Prüfungen über checks"},
+            {"method": "GET", "path": "/checks", "auth": False, "description": "Verfügbare Prüfungen"},
+            {"method": "GET", "path": "/checks/{check_id}", "auth": False, "description": "Eine Prüfung mit Kriterien und nötigen Eingaben"},
+            {"method": "POST", "path": "/checks/{check_id}", "auth": True, "description": "Genau diese eine Prüfung als Job starten (asynchron)"},
             {"method": "GET", "path": "/jobs", "auth": True, "description": "Jobs auflisten, Filter status, limit, offset"},
             {"method": "GET", "path": "/jobs/{job_id}", "auth": True, "description": "Status, Ergebnis und Artefakt-Links"},
             {"method": "POST", "path": "/jobs/{job_id}/reports", "auth": True, "description": "Bericht als md oder pdf erzeugen"},
@@ -238,11 +283,48 @@ def discovery(request: Request):
                 "target_audience": "SuS",
                 "pages": 8,
             },
+            "single_check_example": {"target_url": "https://anbieter.example", "checks": ["site.transport"]},
         },
         "checks": checks,
         "criteria": criteria_items,
         "links": {"openapi": f"{base}/openapi.json", "docs": f"{base}/docs"},
     }
+
+
+@public.get("/checks")
+def list_checks():
+    """The checks that `POST /checks/{check_id}` and the `checks` job field accept."""
+    available = runtime_availability()
+    return {"items": [{**check.to_dict(), "available": available.get(check.id, True)} for check in CHECKS]}
+
+
+@public.get("/checks/{check_id}")
+def get_check_definition(check_id: str):
+    check = _check_or_404(check_id)
+    return {**check.to_dict(), "available": runtime_availability().get(check.id, True)}
+
+
+@protected.post("/checks/{check_id}", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
+def run_single_check(check_id: str, body: CheckRunRequest) -> JobCreatedResponse:
+    """Start a job that runs only this check; the result holds only its criteria."""
+    _check_or_404(check_id)
+    data = body.model_dump()
+    data["checks"] = [check_id]
+    if check_id == "agentic.persona_crawl":
+        data["agentic"] = True
+    try:
+        request = JobCreateRequest.model_validate(data)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False)) from exc
+    request.agent_password = body.agent_password
+    return create_job(request)
+
+
+def _check_or_404(check_id: str):
+    check = get_check(check_id)
+    if check is None:
+        raise HTTPException(status_code=404, detail=f"unknown check {check_id}; see GET /checks")
+    return check
 
 
 @protected.post("/jobs", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -413,6 +495,7 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
         agent_instructions=list(request.agent_instructions),
         lighthouse=request.lighthouse,
         webinspector_export=request.webinspector_export,
+        checks=list(request.checks) or None,
     )
     return run.result, run.raw_capture, run.code_capture, run.document_capture, run.agent_capture
 

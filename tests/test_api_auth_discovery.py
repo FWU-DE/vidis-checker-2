@@ -220,3 +220,112 @@ def test_agent_password_reaches_the_runner_but_is_never_stored(client: TestClien
     stored = (tmp_path / "results" / job_id / "job.json").read_text(encoding="utf-8")
     assert "geheim-123" not in stored
     assert "agent_password" not in json.loads(stored)["request"]
+
+
+def _counting_site(monkeypatch) -> dict:
+    """Fake site sources that count how often the browser crawl runs."""
+    calls = {"crawl": 0}
+    _fake_site(monkeypatch)
+    original = server.cli_module.crawl
+
+    def counting_crawl(*args, **kwargs):
+        calls["crawl"] += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(server.cli_module, "crawl", counting_crawl)
+    monkeypatch.setattr(
+        server.cli_module,
+        "check_site_transport",
+        lambda url: [CheckFinding(criterion=code, status="PASS", note="TLS fixture") for code in ("ITS-ENC-359", "ITS-ENC-360", "ITS-ENC-361")],
+    )
+    return calls
+
+
+def test_job_with_checks_returns_only_their_criteria(client: TestClient, monkeypatch) -> None:
+    calls = _counting_site(monkeypatch)
+
+    job_id = client.post("/jobs", json={"target_url": "https://app.example.test", "checks": ["site.cookies", "site.advertising"]}).json()["id"]
+    completed = _wait(client, job_id)
+
+    assert completed["status"] == "completed", completed.get("error")
+    assert {f["criterion"] for f in completed["result"]["findings"]} == {"RDS-CUC-371", "RDS-CUC-372", "RDS-WER-384"}
+    assert completed["request"]["checks"] == ["site.cookies", "site.advertising"]
+    assert calls["crawl"] == 1
+
+
+def test_transport_check_alone_skips_the_browser_crawl(client: TestClient, monkeypatch) -> None:
+    calls = _counting_site(monkeypatch)
+
+    job_id = client.post("/jobs", json={"target_url": "https://app.example.test", "checks": ["site.transport"]}).json()["id"]
+    completed = _wait(client, job_id)
+
+    assert completed["status"] == "completed", completed.get("error")
+    assert {f["criterion"] for f in completed["result"]["findings"]} == {"ITS-ENC-359", "ITS-ENC-360", "ITS-ENC-361"}
+    assert calls["crawl"] == 0
+
+
+def test_single_check_endpoint_runs_one_check(client: TestClient, monkeypatch) -> None:
+    calls = _counting_site(monkeypatch)
+
+    response = client.post("/checks/site.legal_pages", json={"target_url": "https://app.example.test"})
+    assert response.status_code == 202
+    completed = _wait(client, response.json()["id"])
+
+    assert completed["status"] == "completed", completed.get("error")
+    assert {f["criterion"] for f in completed["result"]["findings"]} == {"RDS-IPF-364", "RDS-IPF-365", "RDS-IPF-366", "RDS-IPF-367"}
+    assert completed["request"]["checks"] == ["site.legal_pages"]
+    assert calls["crawl"] == 0
+
+
+def test_check_selection_is_validated(client: TestClient) -> None:
+    unknown = client.post("/jobs", json={"target_url": "https://app.example.test", "checks": ["site.nope"]})
+    missing_input = client.post("/jobs", json={"agb_url": "https://app.example.test/agb", "checks": ["site.cookies"]})
+    endpoint_unknown = client.post("/checks/site.nope", json={"target_url": "https://app.example.test"})
+    endpoint_missing = client.post("/checks/code.inspection", json={"target_url": "https://app.example.test"})
+    extra_field = client.post("/checks/site.cookies", json={"target_url": "https://app.example.test", "checks": ["site.transport"]})
+
+    assert unknown.status_code == 422 and "unknown check" in unknown.text
+    assert missing_input.status_code == 422 and "requires target_url" in missing_input.text
+    assert endpoint_unknown.status_code == 404
+    assert endpoint_missing.status_code == 422 and "requires code_path" in endpoint_missing.text
+    assert extra_field.status_code == 422
+
+
+def test_single_check_endpoint_needs_a_key(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("VIDIS_AUTH_DISABLED")
+    monkeypatch.setenv("VIDIS_API_KEYS", "k")
+
+    assert client.post("/checks/site.transport", json={"target_url": "https://app.example.test"}).status_code == 401
+    assert client.get("/checks").status_code == 200
+    assert client.get("/checks/site.transport").json()["criteria"] == ["ITS-ENC-359", "ITS-ENC-360", "ITS-ENC-361"]
+    assert client.get("/checks/site.nope").status_code == 404
+
+
+def test_discovery_links_each_check_to_its_run_endpoint(client: TestClient) -> None:
+    payload = client.get("/discovery").json()
+
+    for check in payload["checks"]:
+        assert check["run"] == {"method": "POST", "path": f"/checks/{check['id']}", "auth": True}
+    assert any(endpoint["path"] == "/checks/{check_id}" and endpoint["method"] == "POST" for endpoint in payload["endpoints"])
+
+
+def test_single_check_endpoint_passes_agent_password(client: TestClient, monkeypatch) -> None:
+    seen: dict = {}
+
+    class FakeRunner:
+        def run(self, **kwargs):
+            seen.update(kwargs)
+            return AgenticCrawlResult(base_url=kwargs["base_url"], task_types=kwargs["task_types"], persona=kwargs["persona"])
+
+    _fake_site(monkeypatch)
+    monkeypatch.setattr(server.cli_module, "DefaultAgenticRunner", lambda: FakeRunner())
+
+    response = client.post(
+        "/checks/agentic.persona_crawl",
+        json={"target_url": "https://app.example.test", "agent_username": "lehrer1", "agent_password": "geheim-456", "agent_tasks": ["legal"]},
+    )
+    completed = _wait(client, response.json()["id"])
+
+    assert completed["status"] == "completed", completed.get("error")
+    assert seen["password"] == "geheim-456"
+    assert completed["request"]["agentic"] is True
