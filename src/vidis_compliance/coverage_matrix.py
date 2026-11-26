@@ -25,6 +25,9 @@ COLUMNS = [
     "known_limitations",
 ]
 
+# documents.analysis finds AGB, privacy policy and AVV on the site itself.
+_DOCUMENT_INPUTS = "target URL (AGB, privacy policy and AVV are found on the site), or AGB/privacy/AVV URLs or document files"
+
 PLATFORM_GAP_AREAS: dict[str, dict[str, str]] = {
     "PLATFORM-AUTH-PERSONA-CRAWL": {
         "name": "Agent login and persona based flows",
@@ -60,7 +63,7 @@ PLATFORM_GAP_AREAS: dict[str, dict[str, str]] = {
         "name": "FastAPI document URL ingestion",
         "platform_status": "automation parity",
         "implementation_status": "partial",
-        "input_needed": "AGB, privacy, and AVV URLs or local server-side document files.",
+        "input_needed": _DOCUMENT_INPUTS + ".",
         "automation_level": "CLI/API automated for local documents and HTTP(S) document URLs",
         "evidence_artifacts": "document_capture.json and criterion notes from document analysis.",
         "cli_api_availability": "CLI supports --agb-url, --privacy-url, --avv-url, and --document; FastAPI accepts document_paths plus agb_url, privacy_url, and avv_url.",
@@ -70,7 +73,7 @@ PLATFORM_GAP_AREAS: dict[str, dict[str, str]] = {
         "name": "RDS-SPE-370 criterion mapping",
         "platform_status": "criterion status",
         "implementation_status": "partial",
-        "input_needed": "AGB/privacy/AVV document files or URLs.",
+        "input_needed": _DOCUMENT_INPUTS + ".",
         "automation_level": "conservative document classifier plus manual fallback",
         "evidence_artifacts": "result.json, Markdown/PDF report, document_capture.json.",
         "cli_api_availability": "RDS-SPE-370 is now in the active registry and emitted by document analysis for CLI/API result output.",
@@ -258,8 +261,10 @@ def _input_needed(code: str, sources: set[str]) -> str:
         needed.append("target URL")
     if "code" in sources:
         needed.append("source-code path")
-    if "documents" in sources:
-        needed.append("AGB/privacy/AVV document files or URLs")
+    if "documents" in sources and "site" not in sources:
+        needed.append(_DOCUMENT_INPUTS)
+    elif "documents" in sources:
+        needed.append("AGB/privacy/AVV documents found on the site, or given as URLs or files")
     if not needed:
         return "Human assessment and product documentation."
     if code in _MANUAL_OVERLAY:
