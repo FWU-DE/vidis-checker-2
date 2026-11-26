@@ -41,7 +41,7 @@ from .sources.documents.analyze import DOCUMENT_CRITERIA, DocumentInput, analyze
 from .evidence import run_lighthouse, write_webinspector_exports
 from .coverage_matrix import write_coverage_matrix
 from . import finding_details
-from .catalog import CRAWL_FREE_SITE_CHECKS, SITE_DECIDES_WITH_DOCUMENTS, criteria_for_checks, resolve_check_selection
+from .catalog import CRAWL_FREE_SITE_CHECKS, SITE_DECIDES_WITH_DOCUMENTS, checks_for_criteria, criteria_for_checks, resolve_check_selection
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 import yaml
@@ -307,6 +307,7 @@ def _run_checks(
     webinspector_export: bool = False,
     ai_model: str | None = None,
     checks: list[str] | None = None,
+    criteria: list[str] | None = None,
     crawl_max_age: int = crawl_cache.DEFAULT_MAX_AGE_SECONDS,
     cache_root: Path | None = None,
     allow_env_credentials: bool = True,
@@ -320,8 +321,22 @@ def _run_checks(
 
     The browser crawl of ``url`` is reused from a crawl younger than
     ``crawl_max_age`` seconds (0 forces a fresh crawl).
+
+    With ``criteria`` (codes like RDS-IPF-365) the result holds exactly these criteria;
+    without ``checks`` the run picks the checks they need (``checks_for_criteria``).
     """
     crit = load_criteria()
+    if criteria:
+        unknown = [code for code in criteria if code not in crit.items]
+        if unknown:
+            raise ValueError(f"unknown criterion/criteria: {', '.join(unknown)}; valid codes are listed at GET /criteria")
+        if not checks:
+            checks = checks_for_criteria(
+                criteria,
+                has_url=bool(url),
+                has_code=bool(code_path),
+                has_documents=bool(documents or agb_url or privacy_url or avv_url),
+            )
     selected = resolve_check_selection(
         checks,
         has_url=bool(url),
@@ -329,6 +344,9 @@ def _run_checks(
         has_documents=bool(documents or agb_url or privacy_url or avv_url),
         flags={"agentic": agentic, "lighthouse": lighthouse, "webinspector_export": webinspector_export},
     )
+    if criteria and selected is None:
+        # No check covers the requested criteria with these inputs: run nothing, answer MANUELL.
+        selected = frozenset()
     if selected is not None:
         agentic = "agentic.persona_crawl" in selected
         lighthouse = "evidence.lighthouse" in selected
@@ -572,16 +590,17 @@ def _run_checks(
             if existing is None or existing.status in {"MANUELL", "FAIL"}:
                 by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
-    if selected is not None:
-        in_scope = criteria_for_checks(selected)
+    in_scope = set(criteria) if criteria else (criteria_for_checks(selected) if selected is not None else None)
+    if in_scope is not None:
         findings = [finding for finding in findings if finding.criterion in in_scope]
     wired = {f.criterion for f in findings}
     for k in crit.items.keys():
-        if selected is not None and k not in criteria_for_checks(selected):
+        if in_scope is not None and k not in in_scope:
             continue
         if k not in wired:
             inputs = {"site": bool(url), "documents": bool(url or document_inputs), "code": bool(code_path)}
-            if selected is not None and finding_details.left_to_other_check(k, inputs=inputs, selected=selected):
+            # A criterion asked for by code always gets an answer; one that only came with a check may be left out.
+            if not criteria and selected is not None and finding_details.left_to_other_check(k, inputs=inputs, selected=selected):
                 continue
             findings.append(finding_details.placeholder(k, inputs=inputs, selected=selected))
     finding_details.tag_site(findings)
@@ -628,6 +647,7 @@ def check(
     webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
     ai_model: str | None = typer.Option(None, "--ai-model", help="Verwendetes KI-Modell für KI-gestützte Bewertungen, z. B. openai:gpt-4.1-mini."),
     checks: list[str] | None = typer.Option(None, "--check", help="Nur diese Prüfung ausführen, z. B. site.cookies oder site.transport. Wiederholbar; IDs listet `vidis checks`."),
+    criteria: list[str] | None = typer.Option(None, "--criterion", help="Nur dieses Kriterium ausgeben, z. B. RDS-IPF-365; die nötigen Prüfungen werden selbst gewählt. Wiederholbar."),
     crawl_max_age: int = typer.Option(1800, "--crawl-max-age", help="Browser-Crawl derselben URL wiederverwenden, wenn jünger als so viele Sekunden; 0 = frisch crawlen."),
 ):
     """Run unified VIDIS checks (site and/or code)."""
@@ -656,6 +676,7 @@ def check(
             webinspector_export=webinspector_export,
             ai_model=ai_model,
             checks=checks,
+            criteria=criteria,
             crawl_max_age=crawl_max_age,
         )
     except ValueError as exc:

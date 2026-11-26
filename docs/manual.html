@@ -243,7 +243,7 @@ uv run pytest -q</code></pre>
   --output example-site \
   --md results/example-site/report.md \
   --pdf results/example-site/report.pdf</code></pre>
-      <p>Nur einzelne Prüfungen: <code>--check</code> wiederholen (ein Crawl derselben URL wird 30 Minuten wiederverwendet, <code>--crawl-max-age 0</code> crawlt frisch), etwa <code>uv run vidis check --url https://example.com --check site.transport --check site.legal_pages</code>. <code>uv run vidis checks</code> listet alle IDs mit ihren Kriterien.</p>
+      <p>Nur einzelne Prüfungen: <code>--check</code> wiederholen (ein Crawl derselben URL wird 30 Minuten wiederverwendet, <code>--crawl-max-age 0</code> crawlt frisch), etwa <code>uv run vidis check --url https://example.com --check site.transport --check site.legal_pages</code>. <code>uv run vidis checks</code> listet alle IDs mit ihren Kriterien. Nur einzelne Kriterien: <code>--criterion</code> wiederholen, etwa <code>uv run vidis check --url https://example.com --criterion RDS-IPF-365</code>; die nötigen Prüfungen werden selbst gewählt, das Ergebnis enthält nur diese Kriterien.</p>
       <h3>Quellcode-Durchsicht für Anbieter</h3>
       <pre><code>uv run vidis check \
   --code-path /path/to/vendor/repo \
@@ -362,7 +362,7 @@ uv run vidis check \
 uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
       <p>Ohne <code>VIDIS_API_KEYS</code> startet <code>vidis serve</code> nur auf <code>127.0.0.1</code> und ist dort ohne Anmeldung offen. Auf jeder anderen Adresse verweigert der Server den Start. Läuft die API ohne Schlüssel und ohne <code>VIDIS_AUTH_DISABLED=1</code>, antworten alle Job-Endpunkte mit <code>503</code>.</p>
       <h3>Anmeldung</h3>
-      <p>Alle Endpunkte unter <code>/jobs</code> und <code>POST /checks/&lt;id&gt;</code> brauchen einen der Schlüssel aus <code>VIDIS_API_KEYS</code> (kommagetrennt, jeder Schlüssel hat vollen Zugriff), als <code>Authorization: Bearer &lt;key&gt;</code> oder <code>X-API-Key: &lt;key&gt;</code>. Ohne gültigen Schlüssel kommt <code>401</code>. <code>VIDIS_API_KEY</code> mit einem einzelnen Schlüssel funktioniert weiterhin.</p>
+      <p>Alle Endpunkte unter <code>/jobs</code>, <code>POST /checks/&lt;id&gt;</code> und <code>POST /criteria/&lt;code&gt;</code> brauchen einen der Schlüssel aus <code>VIDIS_API_KEYS</code> (kommagetrennt, jeder Schlüssel hat vollen Zugriff), als <code>Authorization: Bearer &lt;key&gt;</code> oder <code>X-API-Key: &lt;key&gt;</code>. Ohne gültigen Schlüssel kommt <code>401</code>. <code>VIDIS_API_KEY</code> mit einem einzelnen Schlüssel funktioniert weiterhin.</p>
       <p>Jeder Schlüssel sieht nur die Jobs, die mit ihm angelegt wurden: Liste, Status, Ergebnisse, Artefakte, Berichte und ZIP. Fremde Jobs antworten mit <code>404</code>, als gäbe es sie nicht. Schlüssel in <code>VIDIS_ADMIN_KEYS</code> (kommagetrennt) sehen alle Jobs, auch solche aus der Zeit vor dieser Trennung. Berichte über die API enthalten keine Screenshots aus angemeldeten Bereichen.</p>
       <p>Ohne Schlüssel erreichbar: <code>/health</code>, <code>/status</code>, <code>/discovery</code>, <code>/.well-known/vidis-checks</code>, <code>/criteria</code>, <code>GET /checks</code>, <code>/docs</code> und <code>/openapi.json</code>.</p>
       <h3>Discovery: welche Prüfungen gibt es?</h3>
@@ -392,6 +392,17 @@ uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
   -d '{"target_url":"https://anbieter.example","checks":["site.cookies","site.transport"]}'</code></pre>
       <p>Für genau eine Prüfung gibt es einen eigenen Endpunkt. Er nimmt dieselben Eingaben wie <code>POST /jobs</code>, nur ohne <code>checks</code>, und antwortet ebenfalls mit einer Job-ID; Status und Bericht laufen wie bei jedem Job.</p>
       <pre><code>curl -X POST https://vidis-checker.example/checks/site.transport \
+  -H "X-API-Key: $VIDIS_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"target_url":"https://anbieter.example"}'</code></pre>
+      <h3>Einzelne Kriterien prüfen</h3>
+      <p>Eine Prüfung deckt oft mehrere Kriterien ab, <code>site.legal_pages</code> etwa <code>RDS-IPF-364</code> bis <code>RDS-IPF-367</code>; mit <code>checks</code> kommen alle zurück. Mit <code>criteria</code> (Codes aus <code>GET /criteria</code>) enthält das Ergebnis genau die genannten Kriterien. Ohne <code>checks</code> wählt der Dienst die nötigen Prüfungen selbst; mit <code>checks</code> filtert <code>criteria</code> deren Ergebnis. Ein Kriterium, das mit den Eingaben keine Prüfung bewerten kann, kommt als <code>MANUELL</code> mit <code>missing_input</code> oder <code>not_automated</code> zurück. Unbekannte Codes beantwortet <code>POST /jobs</code> mit <code>422</code>. Aufrufe ohne <code>criteria</code> bleiben unverändert.</p>
+      <pre><code>curl -X POST https://vidis-checker.example/jobs \
+  -H "X-API-Key: $VIDIS_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"target_url":"https://anbieter.example","criteria":["RDS-IPF-365"]}'</code></pre>
+      <p>Für genau ein Kriterium gibt es <code>POST /criteria/&lt;code&gt;</code> mit denselben Eingaben wie <code>POST /checks/&lt;id&gt;</code>; ein unbekannter Code ergibt <code>404</code>.</p>
+      <pre><code>curl -X POST https://vidis-checker.example/criteria/RDS-IPF-365 \
   -H "X-API-Key: $VIDIS_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"target_url":"https://anbieter.example"}'</code></pre>
@@ -527,7 +538,7 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
       </table>
       <p>Der Callback zählt die Befunde je Grund unter <code>summary.reasons</code>.</p>
       <h3>Welche Prüfungen ein Kriterium braucht</h3>
-      <p>Wer entlang der Kriterien prüft, ruft je Kriterium die Prüfungen unter <em>nötig</em> mit der <code>target_url</code> auf, einzeln über <code>POST /checks/&lt;id&gt;</code> oder zusammen über <code>POST /jobs</code> mit <code>checks</code>. <em>Optional</em> ergänzt Belege, braucht aber Quellcode (<code>code_path</code>) oder einen Login (<code>agentic</code>). <code>/discovery</code> liefert dasselbe je Kriterium unter <code>required_checks</code>, <code>optional_checks</code> und <code>run</code> (fertiger Aufruf).</p>
+      <p>Wer entlang der Kriterien prüft, ruft je Kriterium <code>POST /criteria/&lt;code&gt;</code> mit der <code>target_url</code> auf. Alternativ laufen die Prüfungen unter <em>nötig</em> über <code>POST /checks/&lt;id&gt;</code> oder <code>POST /jobs</code> mit <code>checks</code>; dann enthält das Ergebnis alle Kriterien dieser Prüfungen. <em>Optional</em> ergänzt Belege, braucht aber Quellcode (<code>code_path</code>) oder einen Login (<code>agentic</code>). <code>/discovery</code> liefert dasselbe je Kriterium unter <code>required_checks</code>, <code>optional_checks</code> und <code>run</code>: ein fertiger Aufruf von <code>POST /jobs</code> mit <code>checks</code> und <code>criteria</code>, der nur dieses Kriterium zurückgibt.</p>
       <div class="table-wrap">
       <table>
         <thead><tr><th>Kriterium</th><th>Name</th><th>nötig</th><th>optional</th></tr></thead>
