@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
+import os
 from pathlib import Path
 from typing import Any
 import typer
@@ -22,7 +23,11 @@ from .checks.site.cookies import (
 from .checks.site.basic_http import check_site_transport
 from .checks.site.ipf import analyze_ipf_site, findings_from_ipf_analysis
 from .sources.site.crawl import crawl
-from .sources.site.vision import review_screenshots
+from .sources.site.vision import gemini_screenshot_provider, review_screenshots
+from .sources.site import crawl_cache
+
+# Site checks whose criteria a screenshot review can give evidence for.
+VISION_CHECKS = frozenset({"site.advertising", "site.outbound_ad_links", "site.youth_protection", "site.cookies"})
 from .sources.agentic import (
     DefaultAgenticRunner,
     normalize_agent_tasks,
@@ -272,6 +277,8 @@ def run_checks(
     webinspector_export: bool = False,
     ai_model: str | None = None,
     checks: list[str] | None = None,
+    crawl_max_age: int = crawl_cache.DEFAULT_MAX_AGE_SECONDS,
+    cache_root: Path | None = None,
 ) -> CheckRun:
     """Run every VIDIS check that the supplied inputs allow, or only ``checks``.
 
@@ -279,6 +286,9 @@ def run_checks(
     findings for the same inputs. With ``checks`` (ids from the catalog) only
     those checks run and the result only holds their criteria. Raises
     ``ValueError`` for invalid input combinations.
+
+    The browser crawl of ``url`` is reused from a crawl younger than
+    ``crawl_max_age`` seconds (0 forces a fresh crawl).
     """
     crit = load_criteria()
     selected = resolve_check_selection(
@@ -311,14 +321,25 @@ def run_checks(
     privacy_text_for_cookies = _extract_privacy_text_for_cookie_descriptions(document_inputs) if document_inputs else ""
     # Browser capture for cookie/storage-related VIDIS criteria.
     if url and needs_crawl:
-        try:
-            cap = crawl(url, pages=pages, headless=True, screenshot_dir=outdir / "screenshots")
-        except TypeError as exc:
-            if "screenshot_dir" not in str(exc):
-                raise
-            cap = crawl(url, pages=pages, headless=True)
+        cache_dir = cache_root or Path(os.environ.get("VIDIS_CRAWL_CACHE_DIR") or (outdir.parent / ".crawl-cache"))
+        cap, crawl_info = crawl_cache.cached_crawl(
+            crawl, url=url, pages=pages, outdir=outdir, cache_root=cache_dir, max_age=crawl_max_age
+        )
         raw_capture = _capture_to_dict(cap)
-        raw_capture["vision_reviews"] = review_screenshots(raw_capture.get("screenshots") or [])
+        cached_reviews = crawl_info.pop("vision_reviews", None)
+        wants_vision = selected is None or bool(selected & VISION_CHECKS)
+        if wants_vision and cached_reviews is not None:
+            raw_capture["vision_reviews"] = cached_reviews
+        else:
+            provider = gemini_screenshot_provider() if wants_vision else None
+            raw_capture["vision_reviews"] = review_screenshots(raw_capture.get("screenshots") or [], provider=provider)
+            new_reviews = raw_capture["vision_reviews"] if provider is not None else None
+            if not crawl_info["cached"] or new_reviews is not None:
+                crawl_cache.store(cache_dir, url, pages, cap, new_reviews, created=crawl_info.get("created"))
+        for model in sorted({str(r.get("model")) for r in raw_capture["vision_reviews"] if r.get("model")}):
+            raw_capture = _append_ai_model_metadata(raw_capture, f"vertex:{model}")
+        crawl_info.pop("created", None)
+        raw_capture["crawl"] = crawl_info
         if lighthouse:
             raw_capture["lighthouse"] = run_lighthouse(url, outdir / "lighthouse")
         if webinspector_export:
@@ -499,6 +520,7 @@ def check(
     webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
     ai_model: str | None = typer.Option(None, "--ai-model", help="Verwendetes KI-Modell für KI-gestützte Bewertungen, z. B. openai:gpt-4.1-mini."),
     checks: list[str] | None = typer.Option(None, "--check", help="Nur diese Prüfung ausführen, z. B. site.cookies oder site.transport. Wiederholbar; IDs listet `vidis checks`."),
+    crawl_max_age: int = typer.Option(1800, "--crawl-max-age", help="Browser-Crawl derselben URL wiederverwenden, wenn jünger als so viele Sekunden; 0 = frisch crawlen."),
 ):
     """Run unified VIDIS checks (site and/or code)."""
     outdir = Path("results") / output
@@ -526,6 +548,7 @@ def check(
             webinspector_export=webinspector_export,
             ai_model=ai_model,
             checks=checks,
+            crawl_max_age=crawl_max_age,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

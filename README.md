@@ -42,6 +42,8 @@ API automation
 - `GET /discovery` (also `/.well-known/vidis-checks`) is public and lists every available check with its criteria and required inputs, plus endpoints and auth schemes. `/health`, `/criteria`, `/docs` and `/openapi.json` are public too.
 - `POST /jobs` starts an async check with the same checks as `vidis check` and returns a status URL.
 - `"checks": ["site.cookies", "site.transport"]` in `POST /jobs` runs only those checks; `POST /checks/<check_id>` starts a job for exactly one check (same body without `checks`). `GET /checks` lists the ids. Results then only hold the selected checks' criteria.
+- A browser crawl of the same URL and page count is reused for 30 minutes (screenshots and their AI review included); `"crawl_max_age": 0` in a job (or `--crawl-max-age 0`) forces a fresh crawl.
+- Optional AI screenshot review with Gemini on Vertex AI: set `GOOGLE_SA_JSON` (service-account key JSON), optionally `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `VIDIS_LLM_MODEL_STRONG`/`VIDIS_LLM_MODEL_FAST`. It adds evidence to reports and never changes PASS/FAIL. `GET /health` shows the LLM status under `llm`.
 - `GET /jobs?status=completed&limit=100&offset=0` lists persisted jobs without embedding full result payloads.
 - `GET /jobs/<job_id>` returns job metadata, result, report links, and artifact links.
 - Public screenshot evidence from site crawls is exposed as `screenshot_*` artifact links; screenshots from logged-in areas stay on the server.

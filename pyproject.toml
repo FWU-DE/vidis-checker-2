@@ -16,6 +16,8 @@ dependencies = [
   "httpx>=0.28.1",
   "playwright>=1.65",
   "beautifulsoup4>=4.15",
+  "google-auth>=2.40",
+  "requests>=2.32",
 ]
 
 [project.scripts]

@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 from . import cli as cli_module
 from .catalog import CHECK_IDS, CHECKS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
+from .util.llm import llm_status
 from .models import JobResult
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
@@ -68,6 +69,12 @@ class JobCreateRequest(BaseModel):
     agent_vidis_portal: str | None = Field(default=None, max_length=200)
     agent_vidis_login_label: str | None = Field(default=None, max_length=200)
     agent_instructions: list[str] = Field(default_factory=list, max_length=20)
+    crawl_max_age: int = Field(
+        default=1800,
+        ge=0,
+        le=86400,
+        description="Browser-Crawl derselben URL und Seitenzahl wiederverwenden, wenn er jünger ist (Sekunden). 0 erzwingt einen frischen Crawl.",
+    )
     lighthouse: bool = False
     webinspector_export: bool = False
     checks: list[str] = Field(
@@ -126,6 +133,12 @@ class CheckRunRequest(BaseModel):
     agent_vidis_portal: str | None = Field(default=None, max_length=200)
     agent_vidis_login_label: str | None = Field(default=None, max_length=200)
     agent_instructions: list[str] = Field(default_factory=list, max_length=20)
+    crawl_max_age: int = Field(
+        default=1800,
+        ge=0,
+        le=86400,
+        description="Browser-Crawl derselben URL und Seitenzahl wiederverwenden, wenn er jünger ist (Sekunden). 0 erzwingt einen frischen Crawl.",
+    )
 
 
 def _validate_check_selection(request: "JobCreateRequest") -> None:
@@ -215,7 +228,7 @@ protected = APIRouter(tags=["jobs"], dependencies=[Security(require_api_key)])
 
 @public.get("/health")
 def health():
-    return {"status": "ok", "version": SERVICE_VERSION}
+    return {"status": "ok", "version": SERVICE_VERSION, "llm": llm_status()}
 
 
 @public.get("/criteria")
@@ -284,6 +297,15 @@ def discovery(request: Request):
                 "pages": 8,
             },
             "single_check_example": {"target_url": "https://anbieter.example", "checks": ["site.transport"]},
+        },
+        "llm": {
+            **llm_status(),
+            "use": "Bewertet öffentliche Screenshots als zusätzlichen Hinweis im Bericht; ändert keine PASS/FAIL-Ergebnisse. Screenshots aus angemeldeten Bereichen werden nie gesendet.",
+        },
+        "crawl_cache": {
+            "default_max_age_seconds": 1800,
+            "request_field": "crawl_max_age",
+            "note": "Ein Browser-Crawl wird für dieselbe URL und Seitenzahl wiederverwendet; 0 erzwingt einen frischen Crawl.",
         },
         "checks": checks,
         "criteria": criteria_items,
@@ -496,6 +518,7 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
         lighthouse=request.lighthouse,
         webinspector_export=request.webinspector_export,
         checks=list(request.checks) or None,
+        crawl_max_age=request.crawl_max_age,
     )
     return run.result, run.raw_capture, run.code_capture, run.document_capture, run.agent_capture
 
