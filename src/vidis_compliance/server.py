@@ -17,7 +17,7 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response, Security, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -317,6 +317,41 @@ def service_status(refresh: bool = Query(default=False, description="Modelle sof
     }
 
 
+MANUAL_FILES = {
+    "": ("manual.html", "text/html; charset=utf-8"),
+    "assets/vidis-cli-run.svg": ("assets/vidis-cli-run.svg", "image/svg+xml"),
+    "assets/vidis-coverage-dashboard.svg": ("assets/vidis-coverage-dashboard.svg", "image/svg+xml"),
+    "results/coverage_matrix.html": ("results/coverage_matrix.html", "text/html; charset=utf-8"),
+}
+MANUAL_PLACEHOLDER = "https://vidis-checker.example"
+
+
+def _docs_dir() -> Path:
+    configured = os.environ.get("VIDIS_DOCS_DIR", "").strip()
+    return Path(configured) if configured else Path(__file__).resolve().parents[2] / "docs"
+
+
+@public.get("/manual", include_in_schema=False)
+def manual_redirect():
+    return RedirectResponse("/manual/", status_code=307)
+
+
+@public.get("/manual/{path:path}", summary="Bedienungsanleitung (HTML)")
+def manual(path: str, request: Request):
+    """The user manual, with example URLs pointing at this service."""
+    entry = MANUAL_FILES.get(path)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="not found")
+    name, media_type = entry
+    file = _docs_dir() / name
+    if not file.is_file():
+        raise HTTPException(status_code=404, detail="manual not installed")
+    if name == "manual.html":
+        html = file.read_text(encoding="utf-8").replace(MANUAL_PLACEHOLDER, _public_base_url(request))
+        return HTMLResponse(html, media_type=media_type)
+    return FileResponse(file, media_type=media_type)
+
+
 @public.get("/criteria")
 def criteria():
     crit = load_criteria()
@@ -360,7 +395,7 @@ def discovery(request: Request):
                 {"type": "http", "scheme": "bearer", "header": "Authorization: Bearer <key>"},
                 {"type": "apiKey", "in": "header", "name": "X-API-Key"},
             ],
-            "public_paths": ["/health", "/status", "/discovery", "/.well-known/vidis-checks", "/criteria", "/checks", "/docs", "/openapi.json"],
+            "public_paths": ["/health", "/status", "/discovery", "/manual/", "/.well-known/vidis-checks", "/criteria", "/checks", "/docs", "/openapi.json"],
         },
         "endpoints": [
             {"method": "POST", "path": "/jobs", "auth": True, "description": "Prüfung starten (asynchron); optional nur einzelne Prüfungen über checks"},
@@ -405,7 +440,7 @@ def discovery(request: Request):
         },
         "checks": checks,
         "criteria": criteria_items,
-        "links": {"openapi": f"{base}/openapi.json", "docs": f"{base}/docs"},
+        "links": {"openapi": f"{base}/openapi.json", "docs": f"{base}/docs", "manual": f"{base}/manual/"},
     }
 
 
