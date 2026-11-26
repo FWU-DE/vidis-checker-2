@@ -285,3 +285,72 @@ def test_status_is_degraded_when_no_model_answers(client: TestClient, monkeypatc
 
     assert payload["status"] == "degraded"
     assert payload["llm"]["availability"]["models"][llm.DEFAULT_MODELS["fast"]]["http_status"] == 404
+
+
+def test_reviews_run_in_parallel_and_keep_order(tmp_path: Path) -> None:
+    shots = []
+    for i in range(8):
+        path = tmp_path / f"p{i}.png"
+        path.write_bytes(b"x")
+        shots.append({"label": f"p{i}", "path": str(path)})
+
+    def slow(shot: dict) -> dict:
+        time.sleep(0.2)
+        return {"status": "MANUELL", "note": shot["label"]}
+
+    started = time.monotonic()
+    reviews = vision.review_screenshots(shots, provider=slow, concurrency=4)
+    elapsed = time.monotonic() - started
+
+    assert [r["note"] for r in reviews] == [f"p{i}" for i in range(8)]
+    assert elapsed < 1.0  # 8 x 0.2 s sequentially would be 1.6 s
+
+
+def test_parallel_jobs_for_the_same_site_crawl_once(client: TestClient, crawls: list, monkeypatch) -> None:
+    original = server.cli_module.crawl
+
+    def slow_crawl(*args, **kwargs):
+        time.sleep(0.4)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(server.cli_module, "crawl", slow_crawl)
+    ids = [
+        client.post("/checks/" + check, json={"target_url": "https://app.example.test"}).json()["id"]
+        for check in ("site.cookies", "site.fingerprinting", "site.browser_storage")
+    ]
+    deadline = time.monotonic() + 10
+    while any(client.get(f"/jobs/{i}").json()["status"] not in {"completed", "failed"} for i in ids):
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+
+    assert len(crawls) == 1
+    assert all(client.get(f"/jobs/{i}").json()["status"] == "completed" for i in ids)
+
+
+def test_parallel_visual_checks_review_once(client: TestClient, crawls: list, monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_SA_JSON", FAKE_SA)
+    calls: list = []
+
+    def slow_generate(*a, **k):
+        calls.append(1)
+        time.sleep(0.3)
+        return {"status": "MANUELL", "note": "ok", "criterion_suggestions": [], "_model": "gemini-x"}
+
+    monkeypatch.setattr(llm, "generate_json", slow_generate)
+    ids = [
+        client.post("/checks/" + check, json={"target_url": "https://app.example.test"}).json()["id"]
+        for check in ("site.advertising", "site.youth_protection", "site.outbound_ad_links")
+    ]
+    deadline = time.monotonic() + 10
+    while any(client.get(f"/jobs/{i}").json()["status"] not in {"completed", "failed"} for i in ids):
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+
+    assert len(calls) == 1  # one screenshot, reviewed once for all three jobs
+
+
+def test_cookie_check_alone_does_not_call_the_model(client: TestClient, crawls: list, monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_SA_JSON", FAKE_SA)
+    monkeypatch.setattr(llm, "generate_json", lambda *a, **k: pytest.fail("model must not be called"))
+
+    _run(client, {"target_url": "https://app.example.test", "checks": ["site.cookies"]})

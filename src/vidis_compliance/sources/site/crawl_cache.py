@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import threading
 import time
 import uuid
 from dataclasses import asdict, fields
@@ -24,6 +25,28 @@ DEFAULT_MAX_AGE_SECONDS = 30 * 60
 PURGE_AFTER_SECONDS = 24 * 60 * 60
 
 _FIELDS = [field.name for field in fields(PageCapture)]
+
+_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def key_lock(kind: str, cache_root: Path, url: str, pages: int) -> threading.Lock:
+    """One lock per site and step, so parallel jobs crawl or review a site once."""
+    name = f"{kind}:{cache_root}:{cache_key(url, pages)}"
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(name, threading.Lock())
+
+
+def load_reviews(cache_root: Path, url: str, pages: int, created: float | None) -> list[dict] | None:
+    """Screenshot reviews stored for exactly this crawl (same creation time), if any."""
+    try:
+        meta = json.loads((cache_root / cache_key(url, pages) / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if created is None or abs(float(meta.get("created", 0)) - created) > 0.001:
+        return None
+    reviews = meta.get("vision_reviews")
+    return reviews if isinstance(reviews, list) else None
 
 
 def cache_key(url: str, pages: int) -> str:
@@ -129,19 +152,26 @@ def cached_crawl(
     cache_root: Path,
     max_age: int,
 ) -> tuple[Any, dict[str, Any]]:
-    """Crawl ``url`` or reuse a crawl younger than ``max_age`` seconds."""
-    hit = load(cache_root, url, pages, max_age, outdir)
-    if hit is not None:
-        return hit
-    try:
-        capture = crawl_fn(url, pages=pages, headless=True, screenshot_dir=outdir / "screenshots")
-    except TypeError as exc:
-        if "screenshot_dir" not in str(exc):
-            raise
-        capture = crawl_fn(url, pages=pages, headless=True)
+    """Crawl ``url`` or reuse a crawl younger than ``max_age`` seconds.
+
+    A job that finds the same crawl already running waits for it and then
+    reads it from the cache. ``max_age=0`` always crawls afresh.
+    """
+    with key_lock("crawl", cache_root, url, pages):
+        hit = load(cache_root, url, pages, max_age, outdir)
+        if hit is not None:
+            return hit
+        try:
+            capture = crawl_fn(url, pages=pages, headless=True, screenshot_dir=outdir / "screenshots")
+        except TypeError as exc:
+            if "screenshot_dir" not in str(exc):
+                raise
+            capture = crawl_fn(url, pages=pages, headless=True)
+        created = time.time()
+        store(cache_root, url, pages, capture, None, created=created)
     return capture, {
         "cached": False,
         "crawled_at": datetime.now(timezone.utc).isoformat(),
         "max_age_seconds": max_age,
-        "created": time.time(),
+        "created": created,
     }
