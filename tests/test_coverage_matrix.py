@@ -86,3 +86,12 @@ def test_rds_cuc_375_coverage_distinguishes_signal_collection_from_manual_decisi
     assert "legal-purpose decision manual" in row["automation_level"]
     assert "IndexedDB/Cache/ServiceWorker" in row["known_limitations"]
 
+
+
+def test_document_only_criteria_name_target_url_as_input() -> None:
+    # documents.analysis finds AGB, privacy policy and AVV via the target URL.
+    matrix = build_coverage_matrix()
+    rows = {row["code"]: row for row in matrix["rows"]}
+
+    for code in ["RDS-SPE-370", "RDS-AGB-368", "RDS-AGB-369", "PLATFORM-RDS-SPE-370-STATUS", "PLATFORM-FASTAPI-DOCUMENT-URLS"]:
+        assert rows[code]["input_needed"].startswith("target URL"), code
