@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -7,6 +8,7 @@ import threading
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as package_version
 from io import BytesIO
@@ -223,6 +225,8 @@ class JobMetadata(BaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict)
     reports: dict[str, str] = Field(default_factory=dict)
     callback: dict[str, Any] | None = None
+    # key_id of the API key that created the job; never sent in responses.
+    owner: str | None = None
 
 
 class JobSummary(BaseModel):
@@ -257,25 +261,53 @@ _bearer = HTTPBearer(auto_error=False, description="API-Schlüssel als `Authoriz
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False, description="API-Schlüssel als `X-API-Key: <key>`.")
 
 
+@dataclass(frozen=True)
+class Caller:
+    """Who is calling: a stable id derived from the API key, and admin rights."""
+
+    key_id: str
+    admin: bool
+
+
+def key_id(key: str) -> str:
+    return hashlib.sha256(b"vidis-api-key:" + key.encode("utf-8")).hexdigest()[:24]
+
+
 def require_api_key(
     bearer: HTTPAuthorizationCredentials | None = Security(_bearer),
     header_key: str | None = Security(_api_key_header),
-) -> None:
+) -> Caller:
     keys = _api_keys()
-    if not keys:
+    admin_keys = _admin_keys()
+    if not keys and not admin_keys:
         if _auth_disabled():
-            return
+            return Caller(key_id="local", admin=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="API authentication is not configured: set VIDIS_API_KEYS",
         )
     supplied = header_key or (bearer.credentials if bearer else "")
-    if not supplied or not any(hmac.compare_digest(supplied.encode(), key.encode()) for key in keys):
+    is_admin = bool(supplied) and any(hmac.compare_digest(supplied.encode(), key.encode()) for key in admin_keys)
+    is_user = bool(supplied) and any(hmac.compare_digest(supplied.encode(), key.encode()) for key in keys)
+    if not (is_admin or is_user):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return Caller(key_id=key_id(supplied), admin=is_admin)
+
+
+def _owned_metadata(job_id: str, caller: Caller) -> "JobMetadata":
+    """The job, if this caller may see it; otherwise 404 as if it did not exist."""
+    metadata = _read_metadata(job_id)
+    if not _may_see(metadata, caller):
+        raise HTTPException(status_code=404, detail="job not found")
+    return metadata
+
+
+def _may_see(metadata: "JobMetadata", caller: Caller) -> bool:
+    return caller.admin or (metadata.owner is not None and hmac.compare_digest(metadata.owner, caller.key_id))
 
 
 public = APIRouter(tags=["public"])
@@ -393,6 +425,7 @@ def discovery(request: Request):
                 {"type": "http", "scheme": "bearer", "header": "Authorization: Bearer <key>"},
                 {"type": "apiKey", "in": "header", "name": "X-API-Key"},
             ],
+            "job_visibility": "Jeder Schlüssel sieht nur die eigenen Jobs; fremde Jobs antworten mit 404.",
             "public_paths": ["/health", "/status", "/discovery", "/manual/", "/.well-known/vidis-checks", "/criteria", "/checks", "/docs", "/openapi.json"],
         },
         "endpoints": [
@@ -456,7 +489,9 @@ def get_check_definition(check_id: str):
 
 
 @protected.post("/checks/{check_id}", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
-def run_single_check(check_id: str, body: CheckRunRequest, http_request: Request) -> JobCreatedResponse:
+def run_single_check(
+    check_id: str, body: CheckRunRequest, http_request: Request, caller: Caller = Security(require_api_key)
+) -> JobCreatedResponse:
     """Start a job that runs only this check; the result holds only its criteria."""
     _check_or_404(check_id)
     data = body.model_dump()
@@ -469,7 +504,7 @@ def run_single_check(check_id: str, body: CheckRunRequest, http_request: Request
         raise RequestValidationError(exc.errors(include_url=False)) from exc
     request.agent_password = body.agent_password
     request.callback_secret = body.callback_secret
-    return create_job(request, http_request)
+    return create_job(request, http_request, caller)
 
 
 def _check_or_404(check_id: str):
@@ -480,7 +515,7 @@ def _check_or_404(check_id: str):
 
 
 @protected.post("/jobs", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
-def create_job(request: JobCreateRequest, http_request: Request) -> JobCreatedResponse:
+def create_job(request: JobCreateRequest, http_request: Request, caller: Caller = Security(require_api_key)) -> JobCreatedResponse:
     job_id = uuid.uuid4().hex
     metadata = JobMetadata(
         id=job_id,
@@ -488,6 +523,7 @@ def create_job(request: JobCreateRequest, http_request: Request) -> JobCreatedRe
         created_at=_now(),
         updated_at=_now(),
         request=request,
+        owner=caller.key_id,
     )
     _job_dir(job_id).mkdir(parents=True, exist_ok=False)
     _write_metadata(metadata)
@@ -501,8 +537,9 @@ def list_jobs(
     status_filter: JobStatus | None = Query(default=None, alias="status"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    caller: Caller = Security(require_api_key),
 ) -> JobListResponse:
-    jobs = _list_metadata(status_filter=status_filter)
+    jobs = [job for job in _list_metadata(status_filter=status_filter) if _may_see(job, caller)]
     page = jobs[offset : offset + limit]
     return JobListResponse(
         total=len(jobs),
@@ -512,14 +549,17 @@ def list_jobs(
     )
 
 
-@protected.get("/jobs/{job_id}", response_model=JobMetadata)
-def get_job(job_id: str) -> JobMetadata:
-    return _read_metadata(job_id)
+@protected.get("/jobs/{job_id}", response_model=JobMetadata, response_model_exclude={"owner"})
+def get_job(job_id: str, caller: Caller = Security(require_api_key)) -> JobMetadata:
+    return _owned_metadata(job_id, caller)
 
 
 @protected.get("/jobs/{job_id}/artifacts/{artifact_name:path}")
-def get_artifact(job_id: str, artifact_name: str):
+def get_artifact(job_id: str, artifact_name: str, caller: Caller = Security(require_api_key)):
+    metadata = _owned_metadata(job_id, caller)
     path = _safe_named_file(job_id, artifact_name, ALLOWED_ARTIFACTS)
+    if artifact_name == "job.json":
+        return Response(_public_job_json(metadata), media_type="application/json; charset=utf-8")
     if path.suffix == ".json":
         return Response(path.read_text(encoding="utf-8"), media_type="application/json; charset=utf-8")
     return FileResponse(path)
@@ -530,13 +570,13 @@ def get_artifact(job_id: str, artifact_name: str):
     response_model=ReportCreatedResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_report(job_id: str, request: ReportCreateRequest) -> ReportCreatedResponse:
-    metadata = _read_metadata(job_id)
+def create_report(job_id: str, request: ReportCreateRequest, caller: Caller = Security(require_api_key)) -> ReportCreatedResponse:
+    metadata = _owned_metadata(job_id, caller)
     if metadata.status != "completed" or metadata.result is None:
         raise HTTPException(status_code=409, detail="job is not completed")
     report_name = f"report.{request.format}"
     output = _job_dir(job_id) / report_name
-    raw_capture = _load_optional_json(_job_dir(job_id) / "capture.json")
+    raw_capture = _without_authenticated_screenshots(_load_optional_json(_job_dir(job_id) / "capture.json"))
     if request.format == "md":
         generate_markdown(metadata.result, output, raw_capture=raw_capture)
     else:
@@ -552,7 +592,8 @@ def create_report(job_id: str, request: ReportCreateRequest) -> ReportCreatedRes
 
 
 @protected.get("/jobs/{job_id}/reports/{report_name}")
-def get_report(job_id: str, report_name: str):
+def get_report(job_id: str, report_name: str, caller: Caller = Security(require_api_key)):
+    _owned_metadata(job_id, caller)
     path = _safe_named_file(job_id, report_name, ALLOWED_REPORTS)
     media_type = "text/markdown; charset=utf-8" if report_name.endswith(".md") else "application/pdf"
     if report_name.endswith(".md"):
@@ -561,14 +602,16 @@ def get_report(job_id: str, report_name: str):
 
 
 @protected.get("/jobs/{job_id}/archive.zip")
-def get_archive(job_id: str):
-    metadata = _read_metadata(job_id)
+def get_archive(job_id: str, caller: Caller = Security(require_api_key)):
+    metadata = _owned_metadata(job_id, caller)
     job_dir = _job_dir(job_id)
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name in sorted(ALLOWED_ARTIFACTS):
             path = job_dir / name
-            if path.exists() and path.is_file():
+            if name == "job.json":
+                archive.writestr(name, _public_job_json(metadata))
+            elif path.exists() and path.is_file():
                 archive.write(path, arcname=name)
         for report_name in sorted(ALLOWED_REPORTS):
             path = job_dir / report_name
@@ -697,8 +740,28 @@ def _results_root() -> Path:
     return Path(os.environ.get("VIDIS_RESULTS_DIR", "results")).resolve()
 
 
+def _without_authenticated_screenshots(raw_capture: dict | None) -> dict | None:
+    """Reports served over the API never show screenshots of logged-in areas."""
+    if not raw_capture:
+        return raw_capture
+    filtered = dict(raw_capture)
+    filtered["screenshots"] = [
+        shot for shot in raw_capture.get("screenshots") or [] if not (isinstance(shot, dict) and (shot.get("authenticated") or shot.get("local_only")))
+    ]
+    return filtered
+
+
+def _public_job_json(metadata: "JobMetadata") -> str:
+    return metadata.model_dump_json(indent=2, exclude={"owner"})
+
+
+def _admin_keys() -> list[str]:
+    raw = os.environ.get("VIDIS_ADMIN_KEYS", "")
+    return [key.strip() for key in raw.split(",") if key.strip()]
+
+
 def _api_keys() -> list[str]:
-    raw = [os.environ.get("VIDIS_API_KEYS", ""), os.environ.get("VIDIS_API_KEY", ""), os.environ.get("API_KEY", "")]
+    raw = [os.environ.get("VIDIS_API_KEYS", ""), os.environ.get("VIDIS_API_KEY", "")]
     return [key.strip() for value in raw for key in value.split(",") if key.strip()]
 
 

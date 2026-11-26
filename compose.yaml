@@ -8,6 +8,8 @@ services:
     environment:
       # Comma-separated; every key gets full API access. Required.
       VIDIS_API_KEYS: ${VIDIS_API_KEYS:?set VIDIS_API_KEYS}
+      # Keys that see every job (operators); other keys see only their own jobs.
+      VIDIS_ADMIN_KEYS: ${VIDIS_ADMIN_KEYS:-}
       VIDIS_JOB_WORKERS: ${VIDIS_JOB_WORKERS:-2}
       # Public base URL for links in job callbacks, e.g. https://vidis-checker.example
       VIDIS_PUBLIC_URL: ${VIDIS_PUBLIC_URL:-}
