@@ -329,3 +329,33 @@ def test_single_check_endpoint_passes_agent_password(client: TestClient, monkeyp
     assert completed["status"] == "completed", completed.get("error")
     assert seen["password"] == "geheim-456"
     assert completed["request"]["agentic"] is True
+
+
+@pytest.mark.parametrize("path", ["/discovery", "/health", "/checks", "/checks/site.transport", "/criteria"])
+def test_public_json_is_utf8_and_readable_in_browsers(client: TestClient, path: str) -> None:
+    response = client.get(path)
+
+    assert response.headers["content-type"] == "application/json; charset=utf-8"
+    assert response.text.startswith("{\n  ")
+
+
+def test_umlauts_are_sent_as_utf8_not_escaped(client: TestClient) -> None:
+    response = client.get("/discovery")
+
+    assert "Prüfkriterien".encode("utf-8") in response.content
+    assert b"\\u00fc" not in response.content
+
+
+def test_error_responses_also_declare_utf8(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("VIDIS_AUTH_DISABLED")
+    monkeypatch.setenv("VIDIS_API_KEYS", "k")
+
+    unauthorized = client.get("/jobs")
+    missing = client.get("/checks/site.nope")
+    invalid = client.post("/jobs", headers={"X-API-Key": "k"}, json={"pages": 0})
+
+    for response in (unauthorized, missing, invalid):
+        assert response.headers["content-type"] == "application/json; charset=utf-8"
+    assert unauthorized.status_code == 401 and unauthorized.headers["www-authenticate"] == "Bearer"
+    assert missing.status_code == 404
+    assert invalid.status_code == 422 and isinstance(invalid.json()["detail"], list)

@@ -17,9 +17,11 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response, Security, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
 from . import cli as cli_module
@@ -36,7 +38,22 @@ try:
 except PackageNotFoundError:  # pragma: no cover - running from a source tree without install
     SERVICE_VERSION = "0.0.0"
 
+class Utf8JSONResponse(JSONResponse):
+    """JSON with an explicit UTF-8 charset and indentation.
+
+    Safari reads ``application/json`` without a charset as Latin-1 (``PrÃ¼fung``)
+    and shows it unformatted; the charset and indentation make the public
+    endpoints readable in any browser.
+    """
+
+    media_type = "application/json; charset=utf-8"
+
+    def render(self, content) -> bytes:
+        return json.dumps(content, ensure_ascii=False, allow_nan=False, indent=2).encode("utf-8")
+
+
 app = FastAPI(
+    default_response_class=Utf8JSONResponse,
     title="VIDIS Compliance API",
     version=SERVICE_VERSION,
     description=(
@@ -44,6 +61,16 @@ app = FastAPI(
         "`GET /discovery` listet die verfügbaren Prüfungen; alle Job-Endpunkte brauchen einen API-Schlüssel."
     ),
 )
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_error(request: Request, exc: StarletteHTTPException) -> Utf8JSONResponse:
+    return Utf8JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError) -> Utf8JSONResponse:
+    return Utf8JSONResponse({"detail": jsonable_encoder(exc.errors())}, status_code=422)
+
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "agent_capture.json", "job.json"}
@@ -421,7 +448,7 @@ def get_job(job_id: str) -> JobMetadata:
 def get_artifact(job_id: str, artifact_name: str):
     path = _safe_named_file(job_id, artifact_name, ALLOWED_ARTIFACTS)
     if path.suffix == ".json":
-        return Response(path.read_text(encoding="utf-8"), media_type="application/json")
+        return Response(path.read_text(encoding="utf-8"), media_type="application/json; charset=utf-8")
     return FileResponse(path)
 
 
