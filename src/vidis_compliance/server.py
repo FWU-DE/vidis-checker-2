@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
+import re
+import time
+from html import escape as html_escape
 import json
 import os
 import threading
@@ -13,9 +17,10 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as package_version
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
+import httpx
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response, Security, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
@@ -63,6 +68,18 @@ app = FastAPI(
     ),
 )
 
+MAX_REQUEST_BYTES = 256 * 1024
+
+
+@app.middleware("http")
+async def _limit_request_size(request: Request, call_next):
+    """Job requests are small JSON; refuse large bodies before parsing them."""
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdigit() or int(declared) > MAX_REQUEST_BYTES):
+        return Utf8JSONResponse({"detail": f"request body larger than {MAX_REQUEST_BYTES} bytes"}, status_code=413)
+    return await call_next(request)
+
+
 @app.exception_handler(StarletteHTTPException)
 async def _http_error(request: Request, exc: StarletteHTTPException) -> Utf8JSONResponse:
     return Utf8JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=getattr(exc, "headers", None))
@@ -73,6 +90,8 @@ async def _validation_error(request: Request, exc: RequestValidationError) -> Ut
     return Utf8JSONResponse({"detail": jsonable_encoder(exc.errors())}, status_code=422)
 
 
+logger = logging.getLogger("vidis_compliance.server")
+
 JobStatus = Literal["queued", "running", "completed", "failed"]
 ALLOWED_ARTIFACTS = {"result.json", "capture.json", "code_capture.json", "document_capture.json", "agent_capture.json", "job.json"}
 ALLOWED_REPORTS = {"report.md", "report.pdf"}
@@ -82,9 +101,9 @@ _JOB_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get("VIDIS_JOB_WOR
 
 class JobCreateRequest(BaseModel):
     target_url: HttpUrl | None = None
-    code_path: str | None = None
-    document_path: str | None = None
-    document_paths: list[str] = Field(default_factory=list)
+    code_path: str | None = Field(default=None, max_length=1000)
+    document_path: str | None = Field(default=None, max_length=1000)
+    document_paths: list[Annotated[str, Field(max_length=1000)]] = Field(default_factory=list, max_length=20)
     agb_url: HttpUrl | None = None
     privacy_url: HttpUrl | None = None
     avv_url: HttpUrl | None = None
@@ -92,12 +111,12 @@ class JobCreateRequest(BaseModel):
     pages: int = Field(default=8, ge=1, le=100)
     agentic: bool = False
     agent_tasks: list[Literal["legal", "student", "teacher", "register", "logout"]] = Field(default_factory=list)
-    agent_username: str | None = None
-    agent_password: str | None = Field(default=None, exclude=True, repr=False)
+    agent_username: str | None = Field(default=None, max_length=200)
+    agent_password: str | None = Field(default=None, max_length=500, exclude=True, repr=False)
     agent_persona: Literal["SuS", "Lehrkraefte", "beide"] | None = None
     agent_vidis_portal: str | None = Field(default=None, max_length=200)
     agent_vidis_login_label: str | None = Field(default=None, max_length=200)
-    agent_instructions: list[str] = Field(default_factory=list, max_length=20)
+    agent_instructions: list[Annotated[str, Field(max_length=500)]] = Field(default_factory=list, max_length=20)
     crawl_max_age: int = Field(
         default=1800,
         ge=0,
@@ -164,20 +183,20 @@ class CheckRunRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     target_url: HttpUrl | None = None
-    code_path: str | None = None
-    document_paths: list[str] = Field(default_factory=list)
+    code_path: str | None = Field(default=None, max_length=1000)
+    document_paths: list[Annotated[str, Field(max_length=1000)]] = Field(default_factory=list, max_length=20)
     agb_url: HttpUrl | None = None
     privacy_url: HttpUrl | None = None
     avv_url: HttpUrl | None = None
     target_audience: Literal["SuS", "Lehrkraefte", "beide"] = "beide"
     pages: int = Field(default=8, ge=1, le=100)
     agent_tasks: list[Literal["legal", "student", "teacher", "register", "logout"]] = Field(default_factory=list)
-    agent_username: str | None = None
-    agent_password: str | None = Field(default=None, exclude=True, repr=False)
+    agent_username: str | None = Field(default=None, max_length=200)
+    agent_password: str | None = Field(default=None, max_length=500, exclude=True, repr=False)
     agent_persona: Literal["SuS", "Lehrkraefte", "beide"] | None = None
     agent_vidis_portal: str | None = Field(default=None, max_length=200)
     agent_vidis_login_label: str | None = Field(default=None, max_length=200)
-    agent_instructions: list[str] = Field(default_factory=list, max_length=20)
+    agent_instructions: list[Annotated[str, Field(max_length=500)]] = Field(default_factory=list, max_length=20)
     crawl_max_age: int = Field(
         default=1800,
         ge=0,
@@ -330,9 +349,7 @@ def service_status(refresh: bool = Query(default=False, description="Modelle sof
     llm = llm_status()
     if llm.get("configured"):
         llm["availability"] = llm_module.public_probe(llm_module.probe_models(force=refresh))
-    counts = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
-    for job in _list_metadata():
-        counts[job.status] = counts.get(job.status, 0) + 1
+    counts = _job_counts()
     cache_dir = Path(os.environ.get("VIDIS_CRAWL_CACHE_DIR") or (_results_root() / ".crawl-cache"))
     entries = [entry for entry in cache_dir.iterdir() if entry.is_dir() and not entry.name.startswith(".")] if cache_dir.is_dir() else []
     degraded = bool(llm.get("configured")) and not any(
@@ -377,7 +394,7 @@ def manual(path: str, request: Request):
     if not file.is_file():
         raise HTTPException(status_code=404, detail="manual not installed")
     if name == "manual.html":
-        html = file.read_text(encoding="utf-8").replace(MANUAL_PLACEHOLDER, _public_base_url(request))
+        html = file.read_text(encoding="utf-8").replace(MANUAL_PLACEHOLDER, html_escape(_public_base_url(request), quote=True))
         return HTMLResponse(html, media_type=media_type)
     return FileResponse(file, media_type=media_type)
 
@@ -392,7 +409,7 @@ def criteria():
 @public.get("/.well-known/vidis-checks", include_in_schema=False)
 def discovery(request: Request):
     """Machine-readable list of the available checks, criteria and endpoints."""
-    base = str(request.base_url).rstrip("/")
+    base = _public_base_url(request)
     crit = load_criteria()
     available = runtime_availability()
     checks = []
@@ -662,13 +679,58 @@ def _run_job(job_id: str, request: JobCreateRequest | None = None, base_url: str
         metadata.artifacts = _artifact_urls(job_id)
     except Exception as exc:  # pragma: no cover - defensive job boundary
         metadata.status = "failed"
-        metadata.error = str(exc)
+        metadata.error = _public_error(exc)
+        logger.exception("job %s failed", job_id)
     finally:
         metadata.updated_at = _now()
         _write_metadata(metadata)
     callback_request = request or metadata.request
     if callback_request.callback_url is not None:
         _schedule_callback(metadata, str(callback_request.callback_url), callback_request.callback_secret, base_url)
+
+
+_COUNTS_CACHE: dict[str, Any] = {}
+COUNTS_CACHE_SECONDS = 30
+
+
+def _job_counts() -> dict[str, int]:
+    """Job counts for the public /status page, read from disk at most every 30 s."""
+    now = time.monotonic()
+    with _STORE_LOCK:
+        if _COUNTS_CACHE and now - _COUNTS_CACHE["at"] < COUNTS_CACHE_SECONDS and _COUNTS_CACHE["root"] == str(_results_root()):
+            return dict(_COUNTS_CACHE["counts"])
+    counts = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
+    for job in _list_metadata():
+        counts[job.status] = counts.get(job.status, 0) + 1
+    with _STORE_LOCK:
+        _COUNTS_CACHE.update({"at": now, "counts": counts, "root": str(_results_root())})
+    return dict(counts)
+
+
+def _public_error(exc: Exception) -> str:
+    """Error text for job.json and callbacks: our own messages, never internals.
+
+    Validation and safety errors are written for the caller; anything else
+    (paths, internal URLs, library messages) stays in the server log.
+    """
+    if isinstance(exc, (net.UnsafeTargetError, net.ResponseTooLargeError)):
+        return str(exc)
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code} beim Abruf von {_url_without_query(str(exc.request.url))}"
+    if isinstance(exc, httpx.TimeoutException):
+        return "Zeitüberschreitung beim Abruf der Zielseite"
+    if isinstance(exc, httpx.HTTPError):
+        return f"Netzwerkfehler beim Abruf ({type(exc).__name__})"
+    message = str(exc)
+    # Our own validation messages are short and name no file paths.
+    if isinstance(exc, ValueError) and len(message) <= 300 and not re.search(r"(/[\w.-]+){2,}", message.split("://")[0]):
+        return message
+    return f"Interner Fehler ({type(exc).__name__}); Details stehen im Server-Log."
+
+
+def _url_without_query(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}"
 
 
 def _schedule_callback(metadata: JobMetadata, url: str, secret: str | None, base_url: str) -> None:
@@ -693,8 +755,10 @@ def _public_base_url(request: Request) -> str:
     configured = os.environ.get("VIDIS_PUBLIC_URL", "").strip()
     if configured:
         return configured.rstrip("/")
-    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip().lower()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[0].strip()
+    if proto not in {"http", "https"} or not re.fullmatch(r"[A-Za-z0-9.-]+(:[0-9]{1,5})?|\[[0-9A-Fa-f:.]+\](:[0-9]{1,5})?", host):
+        return f"{request.url.scheme}://{request.url.netloc}".rstrip("/")
     return f"{proto}://{host}".rstrip("/")
 
 
@@ -781,6 +845,9 @@ def _require_allowed_local_path(value: str) -> None:
     """
     roots_value = os.environ.get("VIDIS_ALLOWED_PATH_ROOTS", "").strip()
     if not roots_value:
+        if _api_keys() or _admin_keys():
+            # A server reachable with keys must not read arbitrary files for its callers.
+            raise ValueError("local paths are disabled on this server: set VIDIS_ALLOWED_PATH_ROOTS to allow a directory")
         return
     if roots_value.lower() == "none":
         raise ValueError("local paths are disabled on this server; use document URLs instead")

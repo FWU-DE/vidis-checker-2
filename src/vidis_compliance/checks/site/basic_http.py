@@ -10,6 +10,7 @@ from urllib.parse import urlparse, urlunparse
 import httpx
 
 from vidis_compliance.models import CheckFinding
+from ...net import check_public_host
 
 USER_AGENT = "vidis-compliance/0.1 (+https://fwu.de)"
 OBSOLETE_PROTOCOLS: tuple[tuple[str, ssl.TLSVersion], ...] = (
@@ -144,6 +145,8 @@ def check_site_transport(
     tls_probe: Callable[[str, int], Mapping[str, bool]] = _probe_obsolete_tls,
 ) -> list[CheckFinding]:
     parsed = _parsed_url(url)
+    # The caller chooses host and port; check right before connecting, not only when the job was accepted.
+    check_public_host(parsed.hostname or "", strict=False)
     https_url = _https_target(parsed)
     http_url = _origin_url("http", parsed)
     port = parsed.port or 443

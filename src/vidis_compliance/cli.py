@@ -623,7 +623,7 @@ def serve(
             typer.echo("Kein VIDIS_API_KEYS gesetzt: API lokal ohne Anmeldung offen.", err=True)
         else:
             raise typer.BadParameter("VIDIS_API_KEYS setzen, bevor die API auf einer öffentlichen Adresse läuft.", param_hint="--host")
-    uvicorn.run("vidis_compliance.server:app", host=host, port=port, reload=reload, proxy_headers=True, forwarded_allow_ips="*")
+    uvicorn.run("vidis_compliance.server:app", host=host, port=port, reload=reload, proxy_headers=True, forwarded_allow_ips=os.environ.get("VIDIS_FORWARDED_ALLOW_IPS", "127.0.0.1"))
 
 
 if __name__ == "__main__":

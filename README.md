@@ -53,6 +53,7 @@ API automation
 - Public screenshot evidence from site crawls is exposed as `screenshot_*` artifact links; screenshots from logged-in areas stay on the server.
 - `POST /jobs/<job_id>/reports` creates `report.md` or `report.pdf` for completed jobs.
 - `GET /jobs/<job_id>/archive.zip` downloads the bounded evidence package (`job.json`, `result.json`, allowed captures, and reports).
+- Request bodies are limited to 256 KB; job errors carry only caller-facing messages (details go to the server log); without `VIDIS_ALLOWED_PATH_ROOTS` a server with API keys refuses local paths; uvicorn trusts proxy headers only from `VIDIS_FORWARDED_ALLOW_IPS` (default 127.0.0.1), so set `VIDIS_PUBLIC_URL` behind a proxy.
 - Targets in private networks are refused (`VIDIS_ALLOW_PRIVATE_TARGETS=1` allows them); `VIDIS_ALLOWED_PATH_ROOTS` limits `code_path`/`document_paths` to given directories.
 
 Deployment (Docker, Coolify)
