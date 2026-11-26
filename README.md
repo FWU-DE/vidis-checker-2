@@ -28,6 +28,8 @@ Commands
 - vidis check --document agb.html --document avv.pdf [--privacy-url https://example.com/datenschutz] [--agb-url https://example.com/agb] [--avv-url https://example.com/avv]
 - vidis check --code-path /path/to/repo
 - vidis-report --input job_id [--capture results/job_id/capture.json] [--pdf out/report.pdf] [--md out/report.md]
+- vidis check --url https://example.com --check site.transport [--check site.legal_pages]  # only these checks
+- vidis checks  # list check ids
 - vidis serve  # API, see below
 
 Cookie and storage classification
@@ -39,6 +41,7 @@ API automation
 - Every `/jobs` endpoint requires `Authorization: Bearer <key>` or `X-API-Key: <key>`. Without configured keys the job endpoints answer 503 unless `VIDIS_AUTH_DISABLED=1`.
 - `GET /discovery` (also `/.well-known/vidis-checks`) is public and lists every available check with its criteria and required inputs, plus endpoints and auth schemes. `/health`, `/criteria`, `/docs` and `/openapi.json` are public too.
 - `POST /jobs` starts an async check with the same checks as `vidis check` and returns a status URL.
+- `"checks": ["site.cookies", "site.transport"]` in `POST /jobs` runs only those checks; `POST /checks/<check_id>` starts a job for exactly one check (same body without `checks`). `GET /checks` lists the ids. Results then only hold the selected checks' criteria.
 - `GET /jobs?status=completed&limit=100&offset=0` lists persisted jobs without embedding full result payloads.
 - `GET /jobs/<job_id>` returns job metadata, result, report links, and artifact links.
 - Public screenshot evidence from site crawls is exposed as `screenshot_*` artifact links; screenshots from logged-in areas stay on the server.

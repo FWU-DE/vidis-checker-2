@@ -227,3 +227,56 @@ def checks_for_criterion(code: str) -> list[str]:
 def runtime_availability() -> dict[str, bool]:
     """Report optional tools that are installed where the service runs."""
     return {"evidence.lighthouse": shutil.which("lighthouse") is not None}
+
+
+CHECK_IDS: tuple[str, ...] = tuple(check.id for check in CHECKS)
+
+# Site checks that fetch their own pages and need no browser crawl.
+CRAWL_FREE_SITE_CHECKS = frozenset({"site.transport", "site.legal_pages"})
+
+# Checks that are switched on by a request flag rather than by an input alone.
+FLAG_CHECKS = {
+    "agentic": "agentic.persona_crawl",
+    "lighthouse": "evidence.lighthouse",
+    "webinspector_export": "evidence.webinspector",
+}
+
+
+def get_check(check_id: str) -> CheckDefinition | None:
+    return next((check for check in CHECKS if check.id == check_id), None)
+
+
+def resolve_check_selection(
+    checks: list[str] | tuple[str, ...] | None,
+    *,
+    has_url: bool,
+    has_code: bool,
+    has_documents: bool,
+    flags: dict[str, bool] | None = None,
+) -> frozenset[str] | None:
+    """Validate a requested subset of checks; ``None`` means run everything the inputs allow.
+
+    Flags such as ``agentic`` add their check to an explicit selection, so
+    ``checks=["site.cookies"], agentic=True`` checks cookies with a logged-in crawl.
+    Raises ``ValueError`` for unknown checks or missing inputs.
+    """
+    if not checks:
+        return None
+    unknown = [check_id for check_id in checks if get_check(check_id) is None]
+    if unknown:
+        raise ValueError(f"unknown check(s): {', '.join(unknown)}; valid ids are listed at GET /discovery")
+    selected = set(checks)
+    for flag, check_id in FLAG_CHECKS.items():
+        if (flags or {}).get(flag):
+            selected.add(check_id)
+    available = {"site": has_url, "agentic": has_url, "evidence": has_url, "code": has_code, "documents": has_documents}
+    for check_id in sorted(selected):
+        check = get_check(check_id)
+        assert check is not None
+        if not available[check.source]:
+            raise ValueError(f"check {check_id} requires {' and '.join(check.requires)}")
+    return frozenset(selected)
+
+
+def criteria_for_checks(check_ids: frozenset[str] | set[str]) -> set[str]:
+    return {code for check in CHECKS if check.id in check_ids for code in check.criteria}

@@ -33,6 +33,7 @@ from .sources.code.inspect import inspect_code_path
 from .sources.documents.analyze import analyze_documents, build_document_inputs, extract_text, fetch_document
 from .evidence import run_lighthouse, write_webinspector_exports
 from .coverage_matrix import write_coverage_matrix
+from .catalog import CRAWL_FREE_SITE_CHECKS, criteria_for_checks, resolve_check_selection
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 import yaml
@@ -270,14 +271,35 @@ def run_checks(
     lighthouse: bool = False,
     webinspector_export: bool = False,
     ai_model: str | None = None,
+    checks: list[str] | None = None,
 ) -> CheckRun:
-    """Run every VIDIS check that the supplied inputs allow.
+    """Run every VIDIS check that the supplied inputs allow, or only ``checks``.
 
     Shared by ``vidis check`` and the API job runner so both produce the same
-    findings for the same inputs. Raises ``ValueError`` for invalid input
-    combinations.
+    findings for the same inputs. With ``checks`` (ids from the catalog) only
+    those checks run and the result only holds their criteria. Raises
+    ``ValueError`` for invalid input combinations.
     """
     crit = load_criteria()
+    selected = resolve_check_selection(
+        checks,
+        has_url=bool(url),
+        has_code=bool(code_path),
+        has_documents=bool(documents or agb_url or privacy_url or avv_url),
+        flags={"agentic": agentic, "lighthouse": lighthouse, "webinspector_export": webinspector_export},
+    )
+    if selected is not None:
+        agentic = "agentic.persona_crawl" in selected
+        lighthouse = "evidence.lighthouse" in selected
+        webinspector_export = "evidence.webinspector" in selected
+
+    def want(check_id: str) -> bool:
+        return selected is None or check_id in selected
+
+    needs_crawl = selected is None or any(
+        check_id.split(".", 1)[0] in {"site", "agentic", "evidence"} and check_id not in CRAWL_FREE_SITE_CHECKS
+        for check_id in selected
+    )
     cfg = JobConfig(job_id=job_id, target_url=url, code_path=code_path, pages=pages, target_audience=audience)  # noqa: E501
 
     findings = []
@@ -288,7 +310,7 @@ def run_checks(
     document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
     privacy_text_for_cookies = _extract_privacy_text_for_cookie_descriptions(document_inputs) if document_inputs else ""
     # Browser capture for cookie/storage-related VIDIS criteria.
-    if url:
+    if url and needs_crawl:
         try:
             cap = crawl(url, pages=pages, headless=True, screenshot_dir=outdir / "screenshots")
         except TypeError as exc:
@@ -314,31 +336,45 @@ def run_checks(
             "session_storage": cap.session_storage,
         }
         s1, n1 = classify_cookies(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-371", status=s1, note=n1))
-        findings.append(CheckFinding(criterion="RDS-CUC-372", status=s1, note=n1))
+        if want("site.cookies"):
+            findings.append(CheckFinding(criterion="RDS-CUC-371", status=s1, note=n1))
+            findings.append(CheckFinding(criterion="RDS-CUC-372", status=s1, note=n1))
         s2, n2 = classify_tracking_pixel(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-373", status=s2, note=n2))
+        if want("site.tracking_pixel"):
+            findings.append(CheckFinding(criterion="RDS-CUC-373", status=s2, note=n2))
         s3, n3 = classify_local_storage(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-374", status=s3, note=n3))
+        if want("site.browser_storage"):
+            findings.append(CheckFinding(criterion="RDS-CUC-374", status=s3, note=n3))
         s375, n375 = classify_device_storage_access(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-375", status=s375, note=n375))
+        if want("site.device_storage"):
+            findings.append(CheckFinding(criterion="RDS-CUC-375", status=s375, note=n375))
         s376, n376 = classify_browser_fingerprinting(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-376", status=s376, note=n376))
+        if want("site.fingerprinting"):
+            findings.append(CheckFinding(criterion="RDS-CUC-376", status=s376, note=n376))
         s377, n377 = classify_tracking_mechanisms(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377))
+        if want("site.tracking_mechanisms"):
+            findings.append(CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377))
         s4, n4 = classify_advertising(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-WER-384", status=s4, note=n4))
+        if want("site.advertising"):
+            findings.append(CheckFinding(criterion="RDS-WER-384", status=s4, note=n4))
         s5, n5 = classify_outbound_ad_links(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-WER-385", status=s5, note=n5))
+        if want("site.outbound_ad_links"):
+            findings.append(CheckFinding(criterion="RDS-WER-385", status=s5, note=n5))
         s6, n6 = classify_youth_protection(page_signals, audience)
-        findings.append(CheckFinding(criterion="RDS-VIN-354", status=s6, note=n6))
+        if want("site.youth_protection"):
+            findings.append(CheckFinding(criterion="RDS-VIN-354", status=s6, note=n6))
         s453, n453, e453 = classify_cookie_description_completeness(
             page_signals,
             privacy_text=privacy_text_for_cookies,
         )
         raw_capture["rds_cuc_453"] = e453
-        findings.append(CheckFinding(criterion="RDS-CUC-453", status=s453, note=n453))
+        if want("site.cookie_descriptions"):
+            findings.append(CheckFinding(criterion="RDS-CUC-453", status=s453, note=n453))
+    if url and want("site.transport"):
         findings.extend(check_site_transport(url))
+    if url and want("site.legal_pages"):
+        if raw_capture is None:
+            raw_capture = {}
         ipf_analysis = analyze_ipf_site(url)
         raw_capture["ipf"] = {
             "visited_urls": ipf_analysis.visited_urls,
@@ -353,7 +389,7 @@ def run_checks(
             "privacy_dpo_absent_declared": ipf_analysis.privacy.dpo_absent_declared,
         }
         findings.extend(findings_from_ipf_analysis(ipf_analysis))
-    if code_path:
+    if code_path and want("code.inspection"):
         code_findings, code_capture = inspect_code_path(code_path, audience)
         if raw_capture is None:
             raw_capture = {}
@@ -362,7 +398,7 @@ def run_checks(
         for finding in code_findings:
             by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
-    if document_inputs:
+    if document_inputs and want("documents.analysis"):
         document_findings, document_capture = analyze_documents(document_inputs)
         by_criterion = {finding.criterion: finding for finding in findings}
         for finding in document_findings:
@@ -418,8 +454,13 @@ def run_checks(
             if existing is None or existing.status in {"MANUELL", "FAIL"}:
                 by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
+    if selected is not None:
+        in_scope = criteria_for_checks(selected)
+        findings = [finding for finding in findings if finding.criterion in in_scope]
     wired = {f.criterion for f in findings}
     for k in crit.items.keys():
+        if selected is not None and k not in criteria_for_checks(selected):
+            continue
         if k not in wired:
             findings.append(CheckFinding(criterion=k, status="MANUELL", note="Not yet implemented"))
     result = JobResult(job_id=cfg.job_id, findings=findings)
@@ -457,6 +498,7 @@ def check(
     lighthouse: bool = typer.Option(False, "--lighthouse", help="Optional Lighthouse JSON/HTML-Audit als Report-Artefakt erzeugen."),
     webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
     ai_model: str | None = typer.Option(None, "--ai-model", help="Verwendetes KI-Modell für KI-gestützte Bewertungen, z. B. openai:gpt-4.1-mini."),
+    checks: list[str] | None = typer.Option(None, "--check", help="Nur diese Prüfung ausführen, z. B. site.cookies oder site.transport. Wiederholbar; IDs listet `vidis checks`."),
 ):
     """Run unified VIDIS checks (site and/or code)."""
     outdir = Path("results") / output
@@ -483,6 +525,7 @@ def check(
             lighthouse=lighthouse,
             webinspector_export=webinspector_export,
             ai_model=ai_model,
+            checks=checks,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -515,6 +558,16 @@ def check(
         md_path.parent.mkdir(parents=True, exist_ok=True)
         generate_markdown(res, md_path, raw_capture=raw_capture)
     typer.echo(str(outdir / "result.json"))
+
+
+@app.command("checks")
+def list_checks():
+    """List the check ids that `vidis check --check` and the API accept."""
+    from .catalog import CHECKS
+
+    for item in CHECKS:
+        criteria = ", ".join(item.criteria) or "-"
+        typer.echo(f"{item.id:<26} {item.name}  [{criteria}]")
 
 
 @app.command()
