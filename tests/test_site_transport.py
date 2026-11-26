@@ -104,4 +104,4 @@ def test_cli_check_url_writes_transport_findings_without_placeholders(tmp_path: 
     by_code = {finding["criterion"]: finding for finding in payload["findings"]}
     for code in ["ITS-ENC-359", "ITS-ENC-360", "ITS-ENC-361"]:
         assert by_code[code]["status"] == "PASS"
-        assert by_code[code]["note"] != "Not yet implemented"
+        assert by_code[code]["check"] is not None and by_code[code]["reason"] not in {"not_automated", "missing_input"}

@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
 from . import callbacks, net
 from . import cli as cli_module
-from .catalog import CHECK_IDS, CHECKS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
+from .catalog import CHECK_IDS, CHECKS, REASONS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
 from .util import llm as llm_module
 from .util.llm import llm_status
@@ -472,6 +472,35 @@ def discovery(request: Request):
             **llm_status(),
             "use": "Bewertet öffentliche Screenshots als zusätzlichen Hinweis im Bericht; ändert keine PASS/FAIL-Ergebnisse. Screenshots aus angemeldeten Bereichen werden nie gesendet.",
         },
+        "result_format": {
+            "statuses": {
+                "PASS": "Kriterium automatisch als erfüllt bewertet.",
+                "FAIL": "Kriterium automatisch als nicht erfüllt bewertet.",
+                "MANUELL": "Ein Mensch muss bewerten; reason sagt warum, evidence/review_hint/artifacts liefern das Material.",
+            },
+            "reasons": REASONS,
+            "finding_fields": {
+                "criterion": "Kriteriencode, z. B. RDS-CUC-374",
+                "status": "PASS | FAIL | MANUELL",
+                "reason": "automated | needs_review | not_automated | missing_input | not_reachable",
+                "check": "ID der Prüfung, die den Befund erzeugt hat (null bei not_automated)",
+                "note": "Begründung als Text",
+                "evidence": "Daten hinter dem Befund; mögliche Schlüssel je Prüfung unter checks[].evidence_keys",
+                "review_hint": "Was ein Mensch bei MANUELL prüfen soll",
+                "artifacts": "Download-Links (API-Schlüssel nötig) zu den vollständigen Belegen",
+            },
+            "example": {
+                "criterion": "RDS-CUC-374",
+                "status": "MANUELL",
+                "reason": "needs_review",
+                "check": "site.browser_storage",
+                "note": "Unbekannter Browser-Storage: acme.widgetState",
+                "evidence": {"pages": ["https://anbieter.example/"], "local_storage_keys": ["acme.widgetState"], "session_storage_keys": []},
+                "review_hint": "Zweck der Storage-Schlüssel klären: funktional oder Tracking/Profilbildung?",
+                "artifacts": ["/jobs/{job_id}/artifacts/capture.json"],
+            },
+            "per_check": "checks[].outcomes listet je Prüfung, welche status/reason-Kombinationen vorkommen und wann.",
+        },
         "callbacks": {
             "request_fields": ["callback_url", "callback_secret"],
             "method": "POST",
@@ -677,6 +706,8 @@ def _run_job(job_id: str, request: JobCreateRequest | None = None, base_url: str
         metadata.status = "completed"
         metadata.result = result
         metadata.artifacts = _artifact_urls(job_id)
+        _link_finding_artifacts(job_id, result)
+        (job_dir / "result.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
     except Exception as exc:  # pragma: no cover - defensive job boundary
         metadata.status = "failed"
         metadata.error = _public_error(exc)
@@ -942,6 +973,19 @@ def _safe_named_file(job_id: str, name: str, allowed: set[str]) -> Path:
     if job_dir not in path.parents or not path.exists():
         raise HTTPException(status_code=404, detail="file not found")
     return path
+
+
+def _link_finding_artifacts(job_id: str, result: JobResult) -> None:
+    """Turn artifact names in findings into download links; drop what is not served."""
+    job_dir = _job_dir(job_id)
+    for finding in result.findings:
+        links = []
+        for name in finding.artifacts:
+            top = name.split("/", 1)[0]
+            allowed = name in ALLOWED_ARTIFACTS or (top == "screenshots" and name.endswith(".png"))
+            if allowed and (job_dir / name).is_file():
+                links.append(f"/jobs/{job_id}/artifacts/{name}")
+        finding.artifacts = links
 
 
 def _artifact_urls(job_id: str) -> dict[str, str]:

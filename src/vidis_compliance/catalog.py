@@ -33,6 +33,8 @@ class CheckDefinition:
         data["requires"] = list(self.requires)
         data["criteria"] = list(self.criteria)
         data["runs"] = "on request" if self.enabled_by else "automatically when the required inputs are present"
+        data["outcomes"] = outcomes_for(self.id)
+        data["evidence_keys"] = list(EVIDENCE_KEYS.get(self.id, ()))
         return data
 
 
@@ -280,3 +282,116 @@ def resolve_check_selection(
 
 def criteria_for_checks(check_ids: frozenset[str] | set[str]) -> set[str]:
     return {code for check in CHECKS if check.id in check_ids for code in check.criteria}
+
+
+# What each check can report: (status, reason, when). Kept next to the checks so
+# /discovery, /checks and the manual describe exactly what the code returns.
+_REVIEW = "needs_review"
+OUTCOMES: dict[str, tuple[tuple[str, str, str], ...]] = {
+    "site.cookies": (
+        ("PASS", "automated", "Alle Cookies und Storage-Einträge sind laut Open Cookie Database oder Allowlist technisch notwendig."),
+        ("FAIL", "automated", "Nicht notwendige Cookies bei Zielgruppe SuS oder beide."),
+        ("MANUELL", _REVIEW, "Nicht notwendige Cookies bei Zielgruppe Lehrkräfte (Einwilligung?), unbekannte Cookies oder gar keine Cookies erkannt."),
+    ),
+    "site.tracking_pixel": (
+        ("PASS", "automated", "Keine bekannten Tracker in den Anfragen."),
+        ("FAIL", "automated", "Tracker erkannt bei Zielgruppe SuS oder beide."),
+        ("MANUELL", _REVIEW, "Tracker erkannt bei Zielgruppe Lehrkräfte (Einwilligung?)."),
+    ),
+    "site.browser_storage": (
+        ("PASS", "automated", "Kein Local/Session Storage, oder alle Schlüssel sind als notwendig bekannt."),
+        ("FAIL", "automated", "Nicht notwendige Schlüssel bei Zielgruppe SuS oder beide."),
+        ("MANUELL", _REVIEW, "Unbekannte Schlüssel, oder nicht notwendige bei Zielgruppe Lehrkräfte."),
+    ),
+    "site.device_storage": (
+        ("PASS", "automated", "Keine oder nur technisch nötige Zugriffe auf IndexedDB, Cache Storage, Service Worker."),
+        ("FAIL", "automated", "Tracking-Zugriffe bei Zielgruppe SuS oder beide."),
+        ("MANUELL", _REVIEW, "Zweck der Zugriffe nicht bestimmbar, oder Tracking bei Zielgruppe Lehrkräfte."),
+    ),
+    "site.fingerprinting": (
+        ("PASS", "automated", "Keine Fingerprinting-APIs (Canvas, WebGL, AudioContext …) aufgerufen."),
+        ("MANUELL", _REVIEW, "Solche APIs wurden aufgerufen; ob zum Fingerprinting, muss ein Mensch beurteilen."),
+    ),
+    "site.tracking_mechanisms": (
+        ("PASS", "automated", "Keine Trackingmechanismen, oder die Produktdokumente nennen einen pädagogischen Zweck."),
+        ("FAIL", "automated", "Tracking ohne belegten pädagogischen Zweck bei Zielgruppe SuS oder beide."),
+        ("MANUELL", _REVIEW, "Tracking bei Zielgruppe Lehrkräfte oder Zweck unklar."),
+    ),
+    "site.cookie_descriptions": (
+        ("PASS", "automated", "Jedes gefundene Cookie und jeder Storage-Schlüssel steht in der Datenschutzerklärung."),
+        ("FAIL", "automated", "Mindestens eines fehlt in der Datenschutzerklärung (in evidence.missing)."),
+        ("MANUELL", _REVIEW, "Keine Cookies oder Storage-Einträge gefunden, also nichts abzugleichen."),
+        ("MANUELL", "missing_input", "Keine Datenschutzerklärung gefunden oder mitgegeben (privacy_url)."),
+    ),
+    "site.advertising": (
+        ("PASS", "automated", "Keine Werbenetzwerke, Anzeigen-Widgets oder Sponsoring-Hinweise."),
+        ("FAIL", "automated", "Werbesignale erkannt."),
+    ),
+    "site.outbound_ad_links": (
+        ("PASS", "automated", "Keine Affiliate- oder Werbelinks erkannt."),
+        ("MANUELL", _REVIEW, "Mögliche Werbelinks; Ziel prüfen."),
+    ),
+    "site.youth_protection": (
+        ("PASS", "automated", "Keine 18+-, Glücksspiel-, Gewalt- oder riskanten Embed-Signale."),
+        ("FAIL", "automated", "Risikosignale erkannt."),
+        ("MANUELL", _REVIEW, "Eingebettete Inhalte, die ein Mensch ansehen muss."),
+    ),
+    "site.transport": (
+        ("PASS", "automated", "HTTPS erreichbar, HTTP leitet um oder ist zu, alte TLS-Versionen abgelehnt."),
+        ("FAIL", "automated", "HTTP liefert Inhalte ohne Umleitung, HTTPS fehlt oder alte TLS-Versionen werden angenommen."),
+        ("MANUELL", _REVIEW, "TLS-Versionen ließen sich nicht prüfen (ITS-ENC-361)."),
+    ),
+    "site.legal_pages": (
+        ("PASS", "automated", "Impressum/Datenschutzerklärung gefunden, erreichbar und mit den Pflichtangaben."),
+        ("FAIL", "automated", "Nicht gefunden, nicht erreichbar oder Pflichtangaben fehlen (in evidence.*_missing)."),
+    ),
+    "code.inspection": (
+        ("PASS", "automated", "Keine einschlägigen Signale im Quellcode."),
+        ("FAIL", "automated", "Einschlägige Signale gefunden, oder der Code-Pfad existiert nicht."),
+        ("MANUELL", _REVIEW, "Signale gefunden, deren Zweck ein Mensch beurteilen muss."),
+    ),
+    "documents.analysis": (
+        ("PASS", "automated", "Ausdrückliche Regelung im Dokument gefunden (Textstellen in evidence.snippets)."),
+        ("FAIL", "automated", "Das Dokument widerspricht dem Kriterium."),
+        ("MANUELL", _REVIEW, "Dokument gelesen, aber keine ausdrückliche Regelung gefunden."),
+        ("MANUELL", "missing_input", "Keine AGB, Datenschutzerklärung oder AVV gefunden; URL mitgeben."),
+    ),
+    "agentic.persona_crawl": (
+        ("PASS", "automated", "Belege aus dem angemeldeten Bereich bestätigen das Kriterium."),
+        ("FAIL", "automated", "Belege aus dem angemeldeten Bereich widersprechen ihm."),
+        ("MANUELL", _REVIEW, "Belege gesammelt, ein Mensch muss sie beurteilen."),
+    ),
+    "evidence.lighthouse": (),
+    "evidence.webinspector": (),
+}
+
+# Keys that can appear in finding.evidence, per check.
+EVIDENCE_KEYS: dict[str, tuple[str, ...]] = {
+    "site.cookies": ("pages", "cookies"),
+    "site.tracking_pixel": ("pages", "third_party_hosts", "requests"),
+    "site.browser_storage": ("pages", "local_storage_keys", "session_storage_keys"),
+    "site.device_storage": ("pages", "browser_signals"),
+    "site.fingerprinting": ("pages", "browser_signals"),
+    "site.tracking_mechanisms": ("pages", "third_party_hosts", "requests"),
+    "site.cookie_descriptions": ("pages", "observed", "present", "missing"),
+    "site.advertising": ("pages", "vision_reviews"),
+    "site.outbound_ad_links": ("pages", "external_links", "vision_reviews"),
+    "site.youth_protection": ("pages", "vision_reviews"),
+    "site.transport": ("pages",),
+    "site.legal_pages": ("impressum_url", "privacy_url", "impressum_found", "impressum_missing", "impressum_manual", "privacy_found", "privacy_missing", "privacy_manual", "privacy_dpo_absent_declared", "visited_urls"),
+    "code.inspection": ("files_scanned",),
+    "documents.analysis": ("documents", "snippets", "discovery", "skipped"),
+    "agentic.persona_crawl": ("visited_urls",),
+}
+
+REASONS = {
+    "automated": "PASS oder FAIL wurde automatisch entschieden.",
+    "needs_review": "Die Prüfung lief, der Befund ist nicht eindeutig: ein Mensch entscheidet anhand von evidence, review_hint und artifacts.",
+    "not_automated": "Für das Kriterium gibt es keine automatische Prüfung; es ist immer manuell zu bewerten.",
+    "missing_input": "Eine Eingabe fehlte (etwa Dokument-URL oder Login), oder die zuständige Prüfung war nicht ausgewählt; die Notiz nennt was.",
+    "not_reachable": "Eine Seite oder ein Dokument war nicht abrufbar.",
+}
+
+
+def outcomes_for(check_id: str) -> list[dict[str, str]]:
+    return [{"status": status, "reason": reason, "when": when} for status, reason, when in OUTCOMES.get(check_id, ())]

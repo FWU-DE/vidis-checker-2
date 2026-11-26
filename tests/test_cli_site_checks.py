@@ -66,7 +66,7 @@ def test_url_check_emits_advertising_and_youth_protection_findings_without_place
     data = json.loads((tmp_path / "results" / "local" / "result.json").read_text())
     findings = {item["criterion"]: item for item in data["findings"]}
     for criterion in ["RDS-WER-384", "RDS-WER-385", "RDS-VIN-354"]:
-        assert findings[criterion]["note"] != "Not yet implemented"
+        assert findings[criterion]["check"] is not None and findings[criterion]["reason"] not in {"not_automated", "missing_input"}
     assert findings["RDS-WER-384"]["status"] == "FAIL"
     assert findings["RDS-WER-385"]["status"] == "MANUELL"
     assert findings["RDS-VIN-354"]["status"] == "FAIL"

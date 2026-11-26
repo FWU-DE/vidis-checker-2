@@ -160,7 +160,7 @@ def test_api_job_runs_the_same_site_checks_as_the_cli(client: TestClient, monkey
     by_code = {finding["criterion"]: finding for finding in completed["result"]["findings"]}
     assert by_code["ITS-ENC-359"]["note"] == "TLS fixture"
     for code in ("RDS-CUC-375", "RDS-CUC-376", "RDS-WER-384", "RDS-VIN-354"):
-        assert by_code[code]["note"] != "Not yet implemented", code
+        assert by_code[code]["check"] is not None and by_code[code]["reason"] not in {"not_automated", "missing_input"}, code
 
 
 def _fake_site(monkeypatch) -> None:
