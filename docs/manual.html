@@ -503,6 +503,41 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
         </tbody>
       </table>
       <p>Der Callback zählt die Befunde je Grund unter <code>summary.reasons</code>.</p>
+      <h3>Welche Prüfungen ein Kriterium braucht</h3>
+      <p>Wer entlang der Kriterien prüft, ruft je Kriterium die Prüfungen unter <em>nötig</em> mit der <code>target_url</code> auf, einzeln über <code>POST /checks/&lt;id&gt;</code> oder zusammen über <code>POST /jobs</code> mit <code>checks</code>. <em>Optional</em> ergänzt Belege, braucht aber Quellcode (<code>code_path</code>) oder einen Login (<code>agentic</code>). <code>/discovery</code> liefert dasselbe je Kriterium unter <code>required_checks</code>, <code>optional_checks</code> und <code>run</code> (fertiger Aufruf).</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Kriterium</th><th>Name</th><th>nötig</th><th>optional</th></tr></thead>
+        <tbody>
+          <tr><td><code>RDS-CDN-379</code></td><td>CDN nur zur Bereitstellung von Inhalten</td><td>— (nur mit Quellcode oder manuell)</td><td><code>code.inspection</code></td></tr>
+          <tr><td><code>RDS-CUC-371</code></td><td>Nicht essenzielle Cookies</td><td><code>site.cookies</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-CUC-372</code></td><td>Cookies allgemein</td><td><code>site.cookies</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-CUC-373</code></td><td>Trackingpixel</td><td><code>site.tracking_pixel</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-CUC-374</code></td><td>Local Browser Storage</td><td><code>site.browser_storage</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-CUC-375</code></td><td>Informationen auf der Endeinrichtung des Endnutzers</td><td><code>site.device_storage</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-CUC-376</code></td><td>Browserfingerprints</td><td><code>site.fingerprinting</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-CUC-377</code></td><td>Trackingmechanismen zu nicht pädagogischen Zwecken</td><td><code>site.tracking_mechanisms</code>, <code>documents.analysis</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-CUC-453</code></td><td>Beschreibung aller Cookies</td><td><code>site.cookie_descriptions</code></td><td><code>documents.analysis</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-DEV-380</code></td><td>Datenerhebung und -verarbeitung</td><td><code>documents.analysis</code></td><td><code>code.inspection</code></td></tr>
+          <tr><td><code>RDS-DEV-381</code></td><td>Umgang mit Daten nach Beendigung der Zusammenarbeit</td><td><code>documents.analysis</code></td><td>—</td></tr>
+          <tr><td><code>RDS-DEV-466</code></td><td>Sichere Datenverarbeitung</td><td><code>documents.analysis</code></td><td>—</td></tr>
+          <tr><td><code>RDS-DSO-383</code></td><td>Benennung eines Datenschutzbeauftragten</td><td><code>documents.analysis</code></td><td><code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-IPF-364</code></td><td>Leicht auffindbares Impressum</td><td><code>site.legal_pages</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-IPF-365</code></td><td>Leicht auffindbare Datenschutzerklärung</td><td><code>site.legal_pages</code></td><td><code>code.inspection</code>, <code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-IPF-366</code></td><td>Vollständiges Impressum</td><td><code>site.legal_pages</code></td><td><code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-IPF-367</code></td><td>Vollständige Datenschutzerklärung</td><td><code>site.legal_pages</code></td><td><code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-AGB-368</code></td><td>Nutzungsbedingungen/AGB: Datenschutzkonform</td><td><code>documents.analysis</code></td><td>—</td></tr>
+          <tr><td><code>RDS-AGB-369</code></td><td>Nutzungsbedingungen/AGB: AVV-konform</td><td><code>documents.analysis</code></td><td>—</td></tr>
+          <tr><td><code>RDS-SPE-370</code></td><td>Sponsoring</td><td><code>documents.analysis</code></td><td>—</td></tr>
+          <tr><td><code>RDS-VIN-354</code></td><td>Jugendmedienschutz</td><td><code>site.youth_protection</code></td><td><code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-WER-384</code></td><td>Werbefreiheit</td><td><code>site.advertising</code></td><td><code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>RDS-WER-385</code></td><td>Verweise auf Werbeinhalte</td><td><code>site.outbound_ad_links</code></td><td><code>agentic.persona_crawl</code></td></tr>
+          <tr><td><code>ITS-ENC-359</code></td><td>Website nur über https:// aufrufbar</td><td><code>site.transport</code></td><td>—</td></tr>
+          <tr><td><code>ITS-ENC-360</code></td><td>Es sind Umleitungen von http auf https konfiguriert.</td><td><code>site.transport</code></td><td>—</td></tr>
+          <tr><td><code>ITS-ENC-361</code></td><td>Ablehnen veralteter TLS/SSL-Protokolle</td><td><code>site.transport</code></td><td>—</td></tr>
+        </tbody>
+      </table>
+      </div>
       <h3>Mögliche Ergebnisse je Prüfung</h3>
       <p>Diese Tabelle steht maschinenlesbar in <code>/discovery</code> und <code>/checks</code> unter <code>outcomes</code> und <code>evidence_keys</code>. Zusätzlich kann jedes Kriterium <code>MANUELL</code> mit <code>missing_input</code> sein, wenn die zuständige Prüfung im Lauf fehlte (etwa <code>RDS-CUC-453</code> bei <code>documents.analysis</code> allein: dafür <code>site.cookie_descriptions</code> aufrufen), oder mit <code>not_reachable</code>, wenn eine Seite nicht abrufbar war.</p>
       <div class="table-wrap">

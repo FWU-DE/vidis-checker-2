@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
 from . import callbacks, net
 from . import cli as cli_module
-from .catalog import CHECK_IDS, CHECKS, REASONS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
+from .catalog import CHECK_IDS, CHECKS, REASONS, checks_needed_for, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
 from .util import llm as llm_module
 from .util.llm import llm_status
@@ -422,6 +422,7 @@ def discovery(request: Request):
     for code, criterion in crit.items.items():
         check_ids = checks_for_criterion(code)
         deterministic = [check_id for check_id in check_ids if check_id.split(".", 1)[0] in {"site", "code", "documents"}]
+        needed = checks_needed_for(code)
         criteria_items.append(
             {
                 "code": code,
@@ -429,7 +430,20 @@ def discovery(request: Request):
                 "area": criterion.area,
                 "must": criterion.must,
                 "checks": check_ids,
+                "required_checks": needed["required"],
+                "optional_checks": needed["optional"],
                 "automated": bool(deterministic),
+                "run": (
+                    {
+                        "method": "POST",
+                        "path": "/jobs",
+                        "auth": True,
+                        "body": {"target_url": "https://anbieter.example", "checks": needed["required"]},
+                    }
+                    if needed["required"]
+                    else None
+                ),
+                "manual_only": not deterministic,
             }
         )
     return {

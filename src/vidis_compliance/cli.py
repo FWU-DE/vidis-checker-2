@@ -542,7 +542,9 @@ def run_checks(
         if k not in wired:
             findings.append(
                 finding_details.placeholder(
-                    k, inputs={"site": bool(url), "documents": bool(url or document_inputs), "code": bool(code_path)}
+                    k,
+                    inputs={"site": bool(url), "documents": bool(url or document_inputs), "code": bool(code_path)},
+                    selected=selected,
                 )
             )
     finding_details.tag_site(findings)

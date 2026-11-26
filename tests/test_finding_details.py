@@ -160,3 +160,44 @@ def test_manual_lists_every_outcome_from_the_catalog() -> None:
             assert escape(when) in manual, (check_id, when)
     for reason, meaning in REASONS.items():
         assert f"<code>{reason}</code>" in manual and escape(meaning) in manual
+
+
+def test_discovery_says_which_checks_each_criterion_needs(client: TestClient) -> None:
+    criteria = {item["code"]: item for item in client.get("/discovery").json()["criteria"]}
+
+    assert criteria["RDS-CUC-374"]["required_checks"] == ["site.browser_storage"]
+    assert criteria["RDS-CUC-377"]["required_checks"] == ["site.tracking_mechanisms", "documents.analysis"]
+    assert criteria["RDS-CUC-453"]["required_checks"] == ["site.cookie_descriptions"]
+    assert criteria["RDS-AGB-368"]["required_checks"] == ["documents.analysis"]
+    assert criteria["ITS-ENC-361"]["run"]["body"]["checks"] == ["site.transport"]
+    assert criteria["RDS-CDN-379"]["required_checks"] == [] and criteria["RDS-CDN-379"]["run"] is None
+    assert {o["check"] for o in criteria["RDS-CDN-379"]["optional_checks"]} == {"code.inspection"}
+    for item in criteria.values():
+        for check_id in item["required_checks"]:
+            assert item["code"] in next(c for c in CHECKS if c.id == check_id).criteria
+
+
+def test_required_checks_give_an_automatic_finding(client: TestClient) -> None:
+    criteria = {item["code"]: item for item in client.get("/discovery").json()["criteria"]}
+
+    job = _run(client, "/jobs", {"target_url": "https://app.example.test", "checks": criteria["RDS-CUC-374"]["required_checks"]})
+
+    finding = next(f for f in job["result"]["findings"] if f["criterion"] == "RDS-CUC-374")
+    assert finding["reason"] not in {"missing_input", "not_automated"}
+
+
+def test_placeholder_does_not_suggest_the_check_that_ran(client: TestClient) -> None:
+    job = _run(client, "/checks/documents.analysis", {"target_url": "https://app.example.test"})
+
+    cuc453 = next(f for f in job["result"]["findings"] if f["criterion"] == "RDS-CUC-453")
+    assert "site.cookie_descriptions" in cuc453["note"] and "documents.analysis" not in cuc453["note"]
+
+
+def test_manual_has_the_criteria_table() -> None:
+    from vidis_compliance.catalog import checks_needed_for
+
+    manual = (Path(__file__).resolve().parents[1] / "docs" / "manual.html").read_text(encoding="utf-8")
+    for code in load_criteria().items:
+        row = manual.split(f"<tr><td><code>{code}</code></td>", 1)[1].split("</tr>", 1)[0]
+        for check_id in checks_needed_for(code)["required"]:
+            assert f"<code>{check_id}</code>" in row, (code, check_id)
