@@ -64,7 +64,7 @@ def tag_site(findings: list[CheckFinding]) -> None:
             finding.check = SITE_CHECK_FOR[finding.criterion]
 
 
-def placeholder(criterion: str, *, inputs: dict[str, bool]) -> CheckFinding:
+def placeholder(criterion: str, *, inputs: dict[str, bool], selected: frozenset[str] | None = None) -> CheckFinding:
     """MANUELL for a criterion no check of this run covered, saying why."""
     candidates = [
         check for check in CHECKS if criterion in check.criteria and check.source in {"site", "documents", "code"}
@@ -72,7 +72,7 @@ def placeholder(criterion: str, *, inputs: dict[str, bool]) -> CheckFinding:
     if not candidates:
         return CheckFinding(criterion=criterion, status="MANUELL", note=NOT_AUTOMATED_NOTE, reason="not_automated",
                             review_hint="Kriterium anhand der VIDIS-Prüfkriterien manuell bewerten.")
-    runnable = [check for check in candidates if inputs.get(check.source)]
+    runnable = [check for check in candidates if inputs.get(check.source) and not (selected and check.id in selected)]
     if runnable:
         names = ", ".join(check.id for check in runnable)
         note = f"In diesem Lauf nicht geprüft; dafür {names} mit derselben Eingabe aufrufen."

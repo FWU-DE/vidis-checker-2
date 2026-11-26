@@ -395,3 +395,26 @@ REASONS = {
 
 def outcomes_for(check_id: str) -> list[dict[str, str]]:
     return [{"status": status, "reason": reason, "when": when} for status, reason, when in OUTCOMES.get(check_id, ())]
+
+
+# site.cookie_descriptions looks up the privacy policy itself, so this criterion
+# does not need documents.analysis on top.
+_DOCUMENTS_NOT_NEEDED = {"RDS-CUC-453"}
+
+
+def checks_needed_for(code: str) -> dict[str, object]:
+    """Which checks to call for one criterion when only the site URL is known.
+
+    ``required``: call these (with ``target_url``) to get an automatic result.
+    ``optional``: they add evidence but need another input (source code, login).
+    """
+    covering = [check for check in CHECKS if code in check.criteria]
+    site = [check.id for check in covering if check.source == "site"]
+    documents = [check.id for check in covering if check.source == "documents"]
+    required = site + ([] if site and code in _DOCUMENTS_NOT_NEEDED else documents)
+    optional = [
+        {"check": check.id, "needs": list(check.requires)}
+        for check in covering
+        if check.id not in required and check.source in {"code", "agentic", "documents"}
+    ]
+    return {"required": required, "optional": optional}
