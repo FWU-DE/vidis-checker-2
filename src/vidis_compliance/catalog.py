@@ -280,6 +280,23 @@ def resolve_check_selection(
     return frozenset(selected)
 
 
+def checks_for_criteria(codes, *, has_url: bool, has_code: bool, has_documents: bool) -> list[str]:
+    """The checks to run so that each criterion in ``codes`` gets its answer from these inputs.
+
+    Prefers the required checks from ``checks_needed_for``; without their input it falls back
+    to another check that covers the criterion (RDS-CUC-377 with documents only). A criterion
+    no available check covers adds nothing and is answered MANUELL by the run.
+    """
+    available = {"site": has_url, "documents": has_documents or has_url, "code": has_code}
+    picked: list[str] = []
+    for code in codes:
+        required = [check_id for check_id in checks_needed_for(code)["required"] if available[get_check(check_id).source]]
+        if not required:
+            required = [check.id for check in CHECKS if code in check.criteria and available.get(check.source)][:1]
+        picked += required
+    return list(dict.fromkeys(picked))
+
+
 def criteria_for_checks(check_ids: frozenset[str] | set[str]) -> set[str]:
     return {code for check in CHECKS if check.id in check_ids for code in check.criteria}
 

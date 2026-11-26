@@ -168,7 +168,9 @@ def test_discovery_says_which_checks_each_criterion_needs(client: TestClient) ->
     assert criteria["RDS-CUC-377"]["required_checks"] == ["site.tracking_mechanisms"]
     assert criteria["RDS-CUC-453"]["required_checks"] == ["site.cookie_descriptions"]
     assert criteria["RDS-AGB-368"]["required_checks"] == ["documents.analysis"]
+    assert criteria["ITS-ENC-361"]["run"]["path"] == "/jobs"
     assert criteria["ITS-ENC-361"]["run"]["body"]["checks"] == ["site.transport"]
+    assert criteria["ITS-ENC-361"]["run"]["body"]["criteria"] == ["ITS-ENC-361"]
     assert criteria["RDS-CDN-379"]["required_checks"] == [] and criteria["RDS-CDN-379"]["run"] is None
     assert {o["check"] for o in criteria["RDS-CDN-379"]["optional_checks"]} == {"code.inspection"}
     for item in criteria.values():
@@ -193,3 +195,47 @@ def test_manual_has_the_criteria_table() -> None:
         row = manual.split(f"<tr><td><code>{code}</code></td>", 1)[1].split("</tr>", 1)[0]
         for check_id in checks_needed_for(code)["required"]:
             assert f"<code>{check_id}</code>" in row, (code, check_id)
+
+
+def test_criterion_endpoint_returns_only_that_criterion(client: TestClient) -> None:
+    job = _run(client, "/criteria/RDS-IPF-365", {"target_url": "https://app.example.test"})
+
+    assert [f["criterion"] for f in job["result"]["findings"]] == ["RDS-IPF-365"]
+    assert job["request"]["criteria"] == ["RDS-IPF-365"]
+
+
+def test_jobs_with_criteria_pick_the_checks_and_return_exactly_those(client: TestClient) -> None:
+    job = _run(client, "/jobs", {"target_url": "https://app.example.test", "criteria": ["RDS-IPF-365", "RDS-CUC-372"]})
+
+    assert sorted(f["criterion"] for f in job["result"]["findings"]) == ["RDS-CUC-372", "RDS-IPF-365"]
+
+
+def test_criteria_filter_a_check_selection(client: TestClient) -> None:
+    job = _run(
+        client, "/jobs", {"target_url": "https://app.example.test", "checks": ["site.legal_pages"], "criteria": ["RDS-IPF-366"]}
+    )
+
+    assert [f["criterion"] for f in job["result"]["findings"]] == ["RDS-IPF-366"]
+
+
+def test_a_criterion_without_a_runnable_check_still_gets_an_answer(client: TestClient) -> None:
+    # RDS-CDN-379 needs source code; with a URL only it must not start a full run.
+    job = _run(client, "/criteria/RDS-CDN-379", {"target_url": "https://app.example.test"})
+
+    [finding] = job["result"]["findings"]
+    assert finding["criterion"] == "RDS-CDN-379"
+    assert finding["status"] == "MANUELL" and finding["reason"] == "missing_input"
+
+
+def test_unknown_criteria_are_rejected(client: TestClient) -> None:
+    assert client.post("/criteria/RDS-XXX-000", json={"target_url": "https://app.example.test"}).status_code == 404
+    response = client.post("/jobs", json={"target_url": "https://app.example.test", "criteria": ["RDS-XXX-000"]})
+    assert response.status_code == 422
+
+
+def test_discovery_run_returns_only_its_criterion(client: TestClient) -> None:
+    run = next(item for item in client.get("/discovery").json()["criteria"] if item["code"] == "RDS-IPF-365")["run"]
+
+    job = _run(client, run["path"], {**run["body"], "target_url": "https://app.example.test"})
+
+    assert [f["criterion"] for f in job["result"]["findings"]] == ["RDS-IPF-365"]

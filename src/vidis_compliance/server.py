@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
 from . import callbacks, fetch_cache, net
 from . import cli as cli_module
-from .catalog import CHECK_IDS, CHECKS, REASONS, checks_needed_for, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
+from .catalog import CHECK_IDS, CHECKS, REASONS, checks_needed_for, checks_for_criteria, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
 from .util import llm as llm_module
 from .util.llm import llm_status
@@ -145,6 +145,12 @@ class JobCreateRequest(BaseModel):
         description="Nur diese Prüfungen ausführen (IDs aus GET /discovery). Leer: alle, die die Eingaben erlauben.",
         examples=[["site.cookies", "site.transport"]],
     )
+    criteria: list[Annotated[str, Field(max_length=40)]] = Field(
+        default_factory=list,
+        max_length=100,
+        description="Nur diese Kriterien ausgeben (Codes aus GET /criteria). Ohne checks wählt der Dienst die nötigen Prüfungen selbst.",
+        examples=[["RDS-IPF-365"]],
+    )
 
     @model_validator(mode="after")
     def require_target(self) -> "JobCreateRequest":
@@ -171,6 +177,10 @@ class JobCreateRequest(BaseModel):
         if self.agentic and not self.target_url:
             raise ValueError("agentic mode requires target_url")
         self.checks = list(dict.fromkeys(self.checks))
+        self.criteria = list(dict.fromkeys(self.criteria))
+        unknown = [code for code in self.criteria if code not in load_criteria().items]
+        if unknown:
+            raise ValueError(f"unknown criterion/criteria: {', '.join(unknown)}; valid codes are listed at GET /criteria")
         _validate_check_selection(self)
         if self.callback_url is not None:
             _require_callback_target(str(self.callback_url))
@@ -220,11 +230,17 @@ class CheckRunRequest(BaseModel):
 
 
 def _validate_check_selection(request: "JobCreateRequest") -> None:
+    has_documents = bool(request.document_paths or request.agb_url or request.privacy_url or request.avv_url)
+    checks = request.checks
+    if request.criteria and not checks:
+        checks = checks_for_criteria(
+            request.criteria, has_url=request.target_url is not None, has_code=bool(request.code_path), has_documents=has_documents
+        )
     resolve_check_selection(
-        request.checks,
+        checks,
         has_url=request.target_url is not None,
         has_code=bool(request.code_path),
-        has_documents=bool(request.document_paths or request.agb_url or request.privacy_url or request.avv_url),
+        has_documents=has_documents,
         flags={"agentic": request.agentic, "lighthouse": request.lighthouse, "webinspector_export": request.webinspector_export},
     )
 
@@ -446,7 +462,8 @@ def discovery(request: Request):
                         "method": "POST",
                         "path": "/jobs",
                         "auth": True,
-                        "body": {"target_url": "https://anbieter.example", "checks": needed["required"]},
+                        # Same path as before; "criteria" keeps the result to this criterion.
+                        "body": {"target_url": "https://anbieter.example", "checks": needed["required"], "criteria": [code]},
                     }
                     if needed["required"]
                     else None
@@ -468,11 +485,12 @@ def discovery(request: Request):
             "public_paths": ["/health", "/status", "/discovery", "/manual/", "/.well-known/vidis-checks", "/criteria", "/checks", "/docs", "/openapi.json"],
         },
         "endpoints": [
-            {"method": "POST", "path": "/jobs", "auth": True, "description": "Prüfung starten (asynchron); optional nur einzelne Prüfungen über checks"},
+            {"method": "POST", "path": "/jobs", "auth": True, "description": "Prüfung starten (asynchron); optional nur einzelne Prüfungen über checks oder einzelne Kriterien über criteria"},
             {"method": "GET", "path": "/checks", "auth": False, "description": "Verfügbare Prüfungen"},
             {"method": "GET", "path": "/status", "auth": False, "description": "Dienststatus: erreichbare KI-Modelle, Job-Warteschlange, Crawl-Cache"},
             {"method": "GET", "path": "/checks/{check_id}", "auth": False, "description": "Eine Prüfung mit Kriterien und nötigen Eingaben"},
             {"method": "POST", "path": "/checks/{check_id}", "auth": True, "description": "Genau diese eine Prüfung als Job starten (asynchron)"},
+            {"method": "POST", "path": "/criteria/{code}", "auth": True, "description": "Genau ein Kriterium prüfen: nötige Prüfungen laufen, das Ergebnis enthält nur dieses Kriterium"},
             {"method": "GET", "path": "/jobs", "auth": True, "description": "Jobs auflisten, Filter status, limit, offset"},
             {"method": "GET", "path": "/jobs/{job_id}", "auth": True, "description": "Status, Ergebnis und Artefakt-Links"},
             {"method": "POST", "path": "/jobs/{job_id}/reports", "auth": True, "description": "Bericht als md oder pdf erzeugen"},
@@ -489,6 +507,7 @@ def discovery(request: Request):
                 "pages": 8,
             },
             "single_check_example": {"target_url": "https://anbieter.example", "checks": ["site.transport"]},
+            "criteria_example": {"target_url": "https://anbieter.example", "criteria": ["RDS-IPF-365"]},
         },
         "llm": {
             **llm_status(),
@@ -595,6 +614,24 @@ def run_single_check(
     data["checks"] = [check_id]
     if check_id == "agentic.persona_crawl":
         data["agentic"] = True
+    try:
+        request = JobCreateRequest.model_validate(data)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False)) from exc
+    request.agent_password = body.agent_password
+    request.callback_secret = body.callback_secret
+    return create_job(request, http_request, caller)
+
+
+@protected.post("/criteria/{code}", response_model=JobCreatedResponse, status_code=status.HTTP_202_ACCEPTED)
+def run_single_criterion(
+    code: str, body: CheckRunRequest, http_request: Request, caller: Caller = Security(require_api_key)
+) -> JobCreatedResponse:
+    """Start a job for one criterion; it runs the checks the criterion needs and returns only this criterion."""
+    if code not in load_criteria().items:
+        raise HTTPException(status_code=404, detail=f"unknown criterion {code}; see GET /criteria")
+    data = body.model_dump()
+    data["criteria"] = [code]
     try:
         request = JobCreateRequest.model_validate(data)
     except ValidationError as exc:
@@ -880,6 +917,7 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
         lighthouse=request.lighthouse,
         webinspector_export=request.webinspector_export,
         checks=list(request.checks) or None,
+        criteria=list(request.criteria) or None,
         crawl_max_age=request.crawl_max_age,
         allow_env_credentials=False,
     )
