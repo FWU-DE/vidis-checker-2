@@ -30,6 +30,8 @@ DOCUMENT_CRITERIA = (
 class DocumentInput:
     location: str
     kind: str = "document"
+    # Found on the site rather than supplied: a failed fetch is a gap, not an error.
+    discovered: bool = False
 
 
 @dataclass(frozen=True)
@@ -197,8 +199,15 @@ def extract_text(content: bytes, content_type: str = "", location: str = "") -> 
 def analyze_documents(documents: Iterable[DocumentInput | str | Path]) -> tuple[list[CheckFinding], dict]:
     evidence_items: list[DocumentEvidence] = []
     all_text = ""
+    skipped: list[dict[str, str]] = []
     for document in documents:
-        content, content_type, location, kind = fetch_document(document)
+        try:
+            content, content_type, location, kind = fetch_document(document)
+        except Exception as exc:
+            if not (isinstance(document, DocumentInput) and document.discovered):
+                raise
+            skipped.append({"location": document.location, "kind": document.kind, "error": type(exc).__name__})
+            continue
         text = extract_text(content, content_type=content_type, location=location)
         snippets = {code: _matching_snippets(text, RULES[code].pass_patterns + RULES[code].fail_patterns) for code in DOCUMENT_CRITERIA}
         evidence_items.append(
@@ -214,6 +223,7 @@ def analyze_documents(documents: Iterable[DocumentInput | str | Path]) -> tuple[
 
     findings = [_classify_criterion(code, all_text) for code in DOCUMENT_CRITERIA]
     capture = {
+        "skipped": skipped,
         "documents": [asdict(item) for item in evidence_items],
         "evidence": {code: _matching_snippets(all_text, RULES[code].pass_patterns + RULES[code].fail_patterns) for code in DOCUMENT_CRITERIA},
     }

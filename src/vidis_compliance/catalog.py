@@ -37,7 +37,7 @@ class CheckDefinition:
 
 
 _SITE = ("target_url",)
-_DOCS = ("document_paths | agb_url | privacy_url | avv_url",)
+_DOCS = ("target_url (AGB, Datenschutzerklärung und AVV werden auf der Website gesucht) | agb_url | privacy_url | avv_url | document_paths",)
 
 CHECKS: tuple[CheckDefinition, ...] = (
     CheckDefinition(
@@ -269,7 +269,7 @@ def resolve_check_selection(
     for flag, check_id in FLAG_CHECKS.items():
         if (flags or {}).get(flag):
             selected.add(check_id)
-    available = {"site": has_url, "agentic": has_url, "evidence": has_url, "code": has_code, "documents": has_documents}
+    available = {"site": has_url, "agentic": has_url, "evidence": has_url, "code": has_code, "documents": has_documents or has_url}
     for check_id in sorted(selected):
         check = get_check(check_id)
         assert check is not None

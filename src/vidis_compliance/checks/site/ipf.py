@@ -86,9 +86,15 @@ def _legal_url(base_url: str, href: str) -> str | None:
     parsed_absolute = urlparse(absolute)
     if parsed_absolute.scheme not in {"http", "https"}:
         return None
-    if parsed_absolute.netloc != urlparse(base_url).netloc:
+    if _site_host(parsed_absolute.netloc) != _site_host(urlparse(base_url).netloc):
         return None
     return absolute
+
+
+def _site_host(netloc: str) -> str:
+    """Same site with and without ``www.``: www.example.org often redirects to example.org."""
+    host = netloc.lower()
+    return host[4:] if host.startswith("www.") else host
 
 
 def _anchor_score(kind: str, text: str, href: str) -> int:
@@ -96,6 +102,12 @@ def _anchor_score(kind: str, text: str, href: str) -> int:
     if kind == "impressum":
         strong = ["impressum", "imprint"]
         weak = ["anbieterkennzeichnung"]
+    elif kind == "agb":
+        strong = ["agb", "allgemeine geschäftsbedingungen", "allgemeine geschaeftsbedingungen", "nutzungsbedingungen", "terms of use", "terms of service", "terms and conditions"]
+        weak = ["geschäftsbedingungen", "bedingungen", "terms"]
+    elif kind == "avv":
+        strong = ["auftragsverarbeitung", "auftragsverarbeitungsvertrag", "avv", "data processing agreement"]
+        weak = ["auftragsdatenverarbeitung", "adv-vertrag"]
     else:
         strong = ["datenschutzerklärung", "datenschutzerklaerung", "privacy policy", "privacy"]
         weak = ["datenschutz", "data protection"]
@@ -106,7 +118,7 @@ def _anchor_score(kind: str, text: str, href: str) -> int:
     return 0
 
 
-def discover_legal_links(base_url: str, html: str) -> dict[str, str]:
+def discover_legal_links(base_url: str, html: str, kinds: tuple[str, ...] = ("impressum", "privacy")) -> dict[str, str]:
     """Return same-origin live-legal-page candidates discovered in homepage HTML."""
     parser = _AnchorParser()
     parser.feed(html)
@@ -115,11 +127,49 @@ def discover_legal_links(base_url: str, html: str) -> dict[str, str]:
         url = _legal_url(base_url, href)
         if not url:
             continue
-        for kind in ("impressum", "privacy"):
+        for kind in kinds:
             score = _anchor_score(kind, text, href)
             if score and (kind not in best or (score, url) > best[kind]):
                 best[kind] = (score, url)
     return {kind: url for kind, (_score, url) in best.items()}
+
+
+DOCUMENT_KINDS = ("agb", "privacy", "avv")
+
+
+def discover_document_links(url: str, *, fetch: Fetcher | None = None, wanted: tuple[str, ...] = DOCUMENT_KINDS) -> dict[str, object]:
+    """Find AGB, privacy policy and AVV links on a site, for the document checks.
+
+    Looks at the start page first, then at the legal pages found there
+    (Impressum, privacy policy, AGB), because an AVV is often linked only
+    from those. Same-site links only; at most five pages are fetched.
+    """
+    fetch = fetch or _default_fetch
+    start_url = _normalize_start_url(url)
+    found: dict[str, str] = {}
+    searched: list[str] = []
+    errors: list[str] = []
+    queue = [start_url]
+    while queue and len(searched) < 5 and any(kind not in found for kind in wanted):
+        page_url = queue.pop(0)
+        if page_url in searched:
+            continue
+        searched.append(page_url)
+        try:
+            status_code, html = fetch(page_url)
+        except Exception as exc:
+            errors.append(f"{page_url}: {type(exc).__name__}")
+            continue
+        if not (200 <= status_code < 400):
+            errors.append(f"{page_url}: HTTP {status_code}")
+            continue
+        links = discover_legal_links(page_url, html, kinds=(*wanted, "impressum"))
+        for kind in wanted:
+            if kind not in found and links.get(kind):
+                found[kind] = links[kind]
+        if page_url == start_url:
+            queue.extend(link for kind, link in links.items() if link not in queue)
+    return {"found": found, "missing": [kind for kind in wanted if kind not in found], "searched": searched, "errors": errors}
 
 
 def _default_fetch(url: str) -> FetchResult:

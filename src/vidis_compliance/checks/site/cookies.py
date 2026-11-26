@@ -57,6 +57,9 @@ ALLOWED_STORAGE_PREFIXES = [
     'session',
     'phpsessid',
     'jsessionid',
+    # Functional keys of common frameworks, no tracking:
+    'wpemojisettingssupports',  # WordPress core: which emoji the browser can render
+    'htmx-',  # htmx: history cache and current path for back/forward navigation
 ]
 
 
