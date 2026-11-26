@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 import typer
@@ -214,34 +214,71 @@ def _agentic_signal_findings(agent_capture: dict[str, Any], audience: str) -> li
     return findings
 
 
-@app.command()
-def check(
-    url: str = typer.Option(None, "--url"),
-    code_path: str = typer.Option(None, "--code-path"),
-    output: str = typer.Option("job", "--output"),
-    pages: int = typer.Option(8, "--pages"),
-    audience: str = typer.Option("beide", "--audience"),
-    output_pdf: str | None = typer.Option(None, "--pdf", help="Optionaler Pfad für den PDF-Report."),
-    output_md: str | None = typer.Option(None, "--md", help="Optionaler Pfad für den Markdown-Report."),
-    documents: list[Path] | None = typer.Option(None, "--document", help="Lokale HTML/PDF/Text-Dokumente für AGB/AVV/Datenschutz-Prüfungen."),
-    agb_url: str | None = typer.Option(None, "--agb-url", help="URL zu AGB/Nutzungsbedingungen."),
-    privacy_url: str | None = typer.Option(None, "--privacy-url", help="URL zur Datenschutzerklärung."),
-    avv_url: str | None = typer.Option(None, "--avv-url", help="URL zum AVV/Auftragsverarbeitungsvertrag."),
-    agentic: bool = typer.Option(False, "--agentic", help="Optionalen authentifizierten Agent-/Persona-Crawl aktivieren."),
-    agent_tasks: list[str] | None = typer.Option(None, "--agent-task", help="Agent-Task: legal, student, teacher, register oder logout. Wiederholbar."),
-    agent_persona: str | None = typer.Option(None, "--agent-persona", help="Persona für Agent-Crawl, z. B. SuS oder Lehrkraefte."),
-    agent_username: str | None = typer.Option(None, "--agent-username", envvar="VIDIS_AGENT_USERNAME", help="Login-Benutzername; alternativ VIDIS_AGENT_USERNAME."),
-    agent_password: str | None = typer.Option(None, "--agent-password", envvar="VIDIS_AGENT_PASSWORD", help="Login-Passwort; alternativ VIDIS_AGENT_PASSWORD."),
-    agent_vidis_portal: str | None = typer.Option(None, "--agent-vidis-portal", envvar="VIDIS_AGENT_VIDIS_PORTAL", help="VIDIS-Landesportal/Schulportal vor Benutzername/Passwort auswählen, z. B. 'Test Landesportal'."),
-    agent_vidis_login_label: str | None = typer.Option(None, "--agent-vidis-login-label", envvar="VIDIS_AGENT_VIDIS_LOGIN_LABEL", help="Optionaler Text des VIDIS-/SSO-Login-Buttons, falls er im Testobjekt anders heißt."),
-    agent_instructions: list[str] | None = typer.Option(None, "--agent-instruction", help="Natürlichsprachlicher Hinweis für den authentifizierten Agent-Crawl, z. B. 'Gehe auf Assistenten und prüfe die Übersicht'. Wiederholbar."),
-    lighthouse: bool = typer.Option(False, "--lighthouse", help="Optional Lighthouse JSON/HTML-Audit als Report-Artefakt erzeugen."),
-    webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
-    ai_model: str | None = typer.Option(None, "--ai-model", help="Verwendetes KI-Modell für KI-gestützte Bewertungen, z. B. openai:gpt-4.1-mini."),
-):
-    """Run unified VIDIS checks (site and/or code)."""
+_CAPTURE_KEYS = (
+    "url",
+    "cookies",
+    "local_storage",
+    "session_storage",
+    "scripts",
+    "requests",
+    "resources",
+    "links",
+    "visible_text",
+    "browser_signals",
+    "visited_urls",
+    "screenshots",
+    "vision_reviews",
+)
+
+
+def _capture_to_dict(capture: Any) -> dict[str, Any]:
+    try:
+        return asdict(capture)
+    except TypeError:
+        return {key: getattr(capture, key) for key in _CAPTURE_KEYS if hasattr(capture, key)}
+
+
+@dataclass
+class CheckRun:
+    result: JobResult
+    raw_capture: dict[str, Any] | None = None
+    code_capture: dict[str, Any] | None = None
+    document_capture: dict[str, Any] | None = None
+    agent_capture: dict[str, Any] | None = None
+
+
+def run_checks(
+    *,
+    job_id: str,
+    outdir: Path,
+    url: str | None = None,
+    code_path: str | None = None,
+    pages: int = 8,
+    audience: str = "beide",
+    documents: list[Path] | list[str] | None = None,
+    agb_url: str | None = None,
+    privacy_url: str | None = None,
+    avv_url: str | None = None,
+    agentic: bool = False,
+    agent_tasks: list[str] | None = None,
+    agent_persona: str | None = None,
+    agent_username: str | None = None,
+    agent_password: str | None = None,
+    agent_vidis_portal: str | None = None,
+    agent_vidis_login_label: str | None = None,
+    agent_instructions: list[str] | None = None,
+    lighthouse: bool = False,
+    webinspector_export: bool = False,
+    ai_model: str | None = None,
+) -> CheckRun:
+    """Run every VIDIS check that the supplied inputs allow.
+
+    Shared by ``vidis check`` and the API job runner so both produce the same
+    findings for the same inputs. Raises ``ValueError`` for invalid input
+    combinations.
+    """
     crit = load_criteria()
-    cfg = JobConfig(job_id=output, target_url=url, code_path=code_path, pages=pages, target_audience=audience)  # noqa: E501
+    cfg = JobConfig(job_id=job_id, target_url=url, code_path=code_path, pages=pages, target_audience=audience)  # noqa: E501
 
     findings = []
     raw_capture = None
@@ -252,14 +289,13 @@ def check(
     privacy_text_for_cookies = _extract_privacy_text_for_cookie_descriptions(document_inputs) if document_inputs else ""
     # Browser capture for cookie/storage-related VIDIS criteria.
     if url:
-        outdir = Path("results") / cfg.job_id
         try:
             cap = crawl(url, pages=pages, headless=True, screenshot_dir=outdir / "screenshots")
         except TypeError as exc:
             if "screenshot_dir" not in str(exc):
                 raise
             cap = crawl(url, pages=pages, headless=True)
-        raw_capture = asdict(cap)
+        raw_capture = _capture_to_dict(cap)
         raw_capture["vision_reviews"] = review_screenshots(raw_capture.get("screenshots") or [])
         if lighthouse:
             raw_capture["lighthouse"] = run_lighthouse(url, outdir / "lighthouse")
@@ -354,12 +390,8 @@ def check(
         findings = list(by_criterion.values())
     if agentic:
         if not url:
-            raise typer.BadParameter("--agentic requires --url")
-        try:
-            task_types = normalize_agent_tasks(agent_tasks)
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        outdir = Path("results") / cfg.job_id
+            raise ValueError("--agentic requires --url")
+        task_types = normalize_agent_tasks(agent_tasks)
         username = resolve_secret(agent_username, "VIDIS_AGENT_USERNAME")
         password = resolve_secret(agent_password, "VIDIS_AGENT_PASSWORD")
         agent_result = DefaultAgenticRunner().run(
@@ -390,10 +422,76 @@ def check(
     for k in crit.items.keys():
         if k not in wired:
             findings.append(CheckFinding(criterion=k, status="MANUELL", note="Not yet implemented"))
-    res = JobResult(job_id=cfg.job_id, findings=findings)
+    result = JobResult(job_id=cfg.job_id, findings=findings)
     raw_capture = _append_ai_model_metadata(raw_capture, ai_model)
+    return CheckRun(
+        result=result,
+        raw_capture=raw_capture,
+        code_capture=code_capture,
+        document_capture=document_capture,
+        agent_capture=agent_capture,
+    )
 
-    outdir = Path("results") / cfg.job_id
+
+@app.command()
+def check(
+    url: str = typer.Option(None, "--url"),
+    code_path: str = typer.Option(None, "--code-path"),
+    output: str = typer.Option("job", "--output"),
+    pages: int = typer.Option(8, "--pages"),
+    audience: str = typer.Option("beide", "--audience"),
+    output_pdf: str | None = typer.Option(None, "--pdf", help="Optionaler Pfad für den PDF-Report."),
+    output_md: str | None = typer.Option(None, "--md", help="Optionaler Pfad für den Markdown-Report."),
+    documents: list[Path] | None = typer.Option(None, "--document", help="Lokale HTML/PDF/Text-Dokumente für AGB/AVV/Datenschutz-Prüfungen."),
+    agb_url: str | None = typer.Option(None, "--agb-url", help="URL zu AGB/Nutzungsbedingungen."),
+    privacy_url: str | None = typer.Option(None, "--privacy-url", help="URL zur Datenschutzerklärung."),
+    avv_url: str | None = typer.Option(None, "--avv-url", help="URL zum AVV/Auftragsverarbeitungsvertrag."),
+    agentic: bool = typer.Option(False, "--agentic", help="Optionalen authentifizierten Agent-/Persona-Crawl aktivieren."),
+    agent_tasks: list[str] | None = typer.Option(None, "--agent-task", help="Agent-Task: legal, student, teacher, register oder logout. Wiederholbar."),
+    agent_persona: str | None = typer.Option(None, "--agent-persona", help="Persona für Agent-Crawl, z. B. SuS oder Lehrkraefte."),
+    agent_username: str | None = typer.Option(None, "--agent-username", envvar="VIDIS_AGENT_USERNAME", help="Login-Benutzername; alternativ VIDIS_AGENT_USERNAME."),
+    agent_password: str | None = typer.Option(None, "--agent-password", envvar="VIDIS_AGENT_PASSWORD", help="Login-Passwort; alternativ VIDIS_AGENT_PASSWORD."),
+    agent_vidis_portal: str | None = typer.Option(None, "--agent-vidis-portal", envvar="VIDIS_AGENT_VIDIS_PORTAL", help="VIDIS-Landesportal/Schulportal vor Benutzername/Passwort auswählen, z. B. 'Test Landesportal'."),
+    agent_vidis_login_label: str | None = typer.Option(None, "--agent-vidis-login-label", envvar="VIDIS_AGENT_VIDIS_LOGIN_LABEL", help="Optionaler Text des VIDIS-/SSO-Login-Buttons, falls er im Testobjekt anders heißt."),
+    agent_instructions: list[str] | None = typer.Option(None, "--agent-instruction", help="Natürlichsprachlicher Hinweis für den authentifizierten Agent-Crawl, z. B. 'Gehe auf Assistenten und prüfe die Übersicht'. Wiederholbar."),
+    lighthouse: bool = typer.Option(False, "--lighthouse", help="Optional Lighthouse JSON/HTML-Audit als Report-Artefakt erzeugen."),
+    webinspector_export: bool = typer.Option(False, "--webinspector-export", help="Optionale WebInspector-artige Network/Console/Storage-JSON-Exporte erzeugen."),
+    ai_model: str | None = typer.Option(None, "--ai-model", help="Verwendetes KI-Modell für KI-gestützte Bewertungen, z. B. openai:gpt-4.1-mini."),
+):
+    """Run unified VIDIS checks (site and/or code)."""
+    outdir = Path("results") / output
+    try:
+        run = run_checks(
+            job_id=output,
+            outdir=outdir,
+            url=url,
+            code_path=code_path,
+            pages=pages,
+            audience=audience,
+            documents=documents,
+            agb_url=agb_url,
+            privacy_url=privacy_url,
+            avv_url=avv_url,
+            agentic=agentic,
+            agent_tasks=agent_tasks,
+            agent_persona=agent_persona,
+            agent_username=agent_username,
+            agent_password=agent_password,
+            agent_vidis_portal=agent_vidis_portal,
+            agent_vidis_login_label=agent_vidis_login_label,
+            agent_instructions=agent_instructions,
+            lighthouse=lighthouse,
+            webinspector_export=webinspector_export,
+            ai_model=ai_model,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    res = run.result
+    raw_capture = run.raw_capture
+    code_capture = run.code_capture
+    document_capture = run.document_capture
+    agent_capture = run.agent_capture
+
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "result.json").write_text(res.model_dump_json(indent=2), encoding="utf-8")
     if raw_capture is not None:
@@ -420,11 +518,24 @@ def check(
 
 
 @app.command()
-def serve(host: str = "127.0.0.1", port: int = 8645):
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", envvar="VIDIS_HOST"),
+    port: int = typer.Option(8645, "--port", envvar="VIDIS_PORT"),
+    reload: bool = typer.Option(False, "--reload", help="Code bei Änderungen neu laden (nur Entwicklung)."),
+):
     """Start FastAPI server."""
+    import os
+
     import uvicorn
 
-    uvicorn.run("vidis_compliance.server:app", host=host, port=port, reload=True)
+    has_keys = any(os.environ.get(name, "").strip() for name in ("VIDIS_API_KEYS", "VIDIS_API_KEY", "API_KEY"))
+    if not has_keys and not os.environ.get("VIDIS_AUTH_DISABLED"):
+        if host in {"127.0.0.1", "localhost", "::1"}:
+            os.environ["VIDIS_AUTH_DISABLED"] = "1"
+            typer.echo("Kein VIDIS_API_KEYS gesetzt: API lokal ohne Anmeldung offen.", err=True)
+        else:
+            raise typer.BadParameter("VIDIS_API_KEYS setzen, bevor die API auf einer öffentlichen Adresse läuft.", param_hint="--host")
+    uvicorn.run("vidis_compliance.server:app", host=host, port=port, reload=reload, proxy_headers=True, forwarded_allow_ips="*")
 
 
 if __name__ == "__main__":

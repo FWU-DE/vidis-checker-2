@@ -207,7 +207,7 @@
       <a href="#agentic">Agent-Mode</a>
       <a href="#reports">Reports</a>
       <a href="#coverage">Coverage Matrix</a>
-      <a href="#api">FastAPI</a>
+      <a href="#api">API</a>
       <a href="#outputs">Outputs</a>
       <a href="#troubleshooting">Troubleshooting</a>
     </div>
@@ -345,53 +345,61 @@ uv run vidis check \
     </section>
 
     <section id="api">
-      <h2>6. FastAPI-Server für Automatisierung</h2>
-      <p>Für Batch- oder Integrationsfälle kann das Tool als API laufen.</p>
-      <pre><code>uv run vidis serve --host 127.0.0.1 --port 8645</code></pre>
+      <h2>6. API für Automatisierung</h2>
+      <p>Für Batch- oder Integrationsfälle läuft das Tool als API. Sie prüft mit denselben Prüfungen wie <code>vidis check</code>.</p>
+      <pre><code>export VIDIS_API_KEYS='schluessel-1,schluessel-2'
+uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
+      <p>Ohne <code>VIDIS_API_KEYS</code> startet <code>vidis serve</code> nur auf <code>127.0.0.1</code> und ist dort ohne Anmeldung offen. Auf jeder anderen Adresse verweigert der Server den Start. Läuft die API ohne Schlüssel und ohne <code>VIDIS_AUTH_DISABLED=1</code>, antworten alle Job-Endpunkte mit <code>503</code>.</p>
+      <h3>Anmeldung</h3>
+      <p>Alle Endpunkte unter <code>/jobs</code> brauchen einen der Schlüssel aus <code>VIDIS_API_KEYS</code> (kommagetrennt, jeder Schlüssel hat vollen Zugriff), als <code>Authorization: Bearer &lt;key&gt;</code> oder <code>X-API-Key: &lt;key&gt;</code>. Ohne gültigen Schlüssel kommt <code>401</code>. <code>VIDIS_API_KEY</code> mit einem einzelnen Schlüssel funktioniert weiterhin.</p>
+      <p>Ohne Schlüssel erreichbar: <code>/health</code>, <code>/discovery</code>, <code>/.well-known/vidis-checks</code>, <code>/criteria</code>, <code>/docs</code> und <code>/openapi.json</code>.</p>
+      <h3>Discovery: welche Prüfungen gibt es?</h3>
+      <pre><code>curl https://vidis-checker.example/discovery</code></pre>
+      <p>Die Antwort listet unter <code>checks</code> jede Prüfung mit <code>id</code>, den abgedeckten Kriterien, den nötigen Eingaben (<code>requires</code>) und ob sie automatisch oder nur auf Wunsch läuft (<code>enabled_by</code>, z. B. <code>agentic</code> oder <code>lighthouse</code>). Unter <code>criteria</code> steht für jedes VIDIS-Kriterium, welche Prüfungen es abdecken. Dazu kommen Anmeldeverfahren, Endpunkte und ein Beispiel-Request. <code>/.well-known/vidis-checks</code> liefert dasselbe.</p>
       <div class="grid">
         <div class="card">
-          <span class="tag">Health</span>
-          <pre><code>curl http://127.0.0.1:8645/health</code></pre>
-        </div>
-        <div class="card">
-          <span class="tag">Kriterien</span>
-          <pre><code>curl http://127.0.0.1:8645/criteria</code></pre>
-        </div>
-        <div class="card">
-          <span class="tag">Job starten</span>
-          <pre><code>curl -X POST http://127.0.0.1:8645/jobs \
+          <span class="tag">Website-Job</span>
+          <pre><code>curl -X POST https://vidis-checker.example/jobs \
+  -H "Authorization: Bearer $VIDIS_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"target_url":"https://example.com","pages":8}'</code></pre>
+  -d '{"target_url":"https://anbieter.example","privacy_url":"https://anbieter.example/datenschutz","target_audience":"SuS","pages":8}'</code></pre>
         </div>
         <div class="card">
           <span class="tag">Dokument-Job</span>
-          <pre><code>curl -X POST http://127.0.0.1:8645/jobs \
+          <pre><code>curl -X POST https://vidis-checker.example/jobs \
+  -H "X-API-Key: $VIDIS_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"document_paths":["/data/agb.pdf"],"agb_url":"https://example.com/agb","privacy_url":"https://example.com/datenschutz","avv_url":"https://example.com/avv"}'</code></pre>
+  -d '{"agb_url":"https://anbieter.example/agb","privacy_url":"https://anbieter.example/datenschutz","avv_url":"https://anbieter.example/avv"}'</code></pre>
         </div>
       </div>
-      <h3>Job pollieren, Jobs listen und Report erzeugen</h3>
-      <pre><code># Optional absichern: export VIDIS_API_KEY='***'
-# Dann Authorization-Header mit dem konfigurierten Bearer-Token ergänzen
+      <h3>Job abfragen, Jobs auflisten, Bericht erzeugen</h3>
+      <pre><code>curl -H "X-API-Key: $VIDIS_KEY" 'https://vidis-checker.example/jobs?status=completed&amp;limit=100&amp;offset=0'
 
-curl 'http://127.0.0.1:8645/jobs?status=completed&amp;limit=100&amp;offset=0'
+curl -H "X-API-Key: $VIDIS_KEY" https://vidis-checker.example/jobs/&lt;job_id&gt;
 
-curl http://127.0.0.1:8645/jobs/&lt;job_id&gt;
-
-curl -X POST http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports \
+curl -X POST -H "X-API-Key: $VIDIS_KEY" https://vidis-checker.example/jobs/&lt;job_id&gt;/reports \
   -H 'Content-Type: application/json' \
   -d '{"format":"pdf"}'
 
-curl -o report.pdf http://127.0.0.1:8645/jobs/&lt;job_id&gt;/reports/report.pdf
-curl -o vidis-evidence.zip http://127.0.0.1:8645/jobs/&lt;job_id&gt;/archive.zip</code></pre>
-      <p>Ohne <code>VIDIS_API_KEY</code> ist die API für lokale Entwicklung offen. Sobald <code>VIDIS_API_KEY</code> gesetzt ist, müssen alle Endpoints einen gültigen Bearer-Token senden.</p>
-      <p><code>GET /jobs</code> liefert eine begrenzte Übersicht persistierter Jobs mit optionalem <code>status</code>-Filter sowie <code>limit</code>/<code>offset</code>, ohne vollständige Ergebnisdaten einzubetten. Öffentliche Screenshot-Nachweise aus Website-Crawls erscheinen als sichere <code>screenshot_*</code>-Artefaktlinks; authentifizierte oder lokale Screenshots bleiben lokale Prüfbelege und werden nicht per API ausgeliefert. Das ZIP-Archiv enthält nur erlaubte Dateien und Reports; beliebige Zusatzdateien oder Secrets im Job-Ordner werden nicht exportiert.</p>
+curl -H "X-API-Key: $VIDIS_KEY" -o report.pdf https://vidis-checker.example/jobs/&lt;job_id&gt;/reports/report.pdf
+curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.example/jobs/&lt;job_id&gt;/archive.zip</code></pre>
+      <p><code>GET /jobs</code> liefert eine begrenzte Übersicht persistierter Jobs mit optionalem <code>status</code>-Filter sowie <code>limit</code>/<code>offset</code>, ohne vollständige Ergebnisdaten einzubetten. Öffentliche Screenshot-Nachweise aus Website-Crawls erscheinen als <code>screenshot_*</code>-Artefaktlinks; Screenshots aus angemeldeten Bereichen bleiben auf dem Server und werden nicht per API ausgeliefert. Das ZIP-Archiv enthält nur erlaubte Dateien und Reports.</p>
       <h3>Agent-Mode per API</h3>
-      <pre><code>curl -X POST http://127.0.0.1:8645/jobs \
+      <pre><code>curl -X POST https://vidis-checker.example/jobs \
+  -H "X-API-Key: $VIDIS_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"target_url":"https://app.example.test","agentic":true,"agent_tasks":["teacher","logout"],"agent_username":"user@example.test"}'</code></pre>
-      <p>Das Passwort kann über <code>VIDIS_AGENT_PASSWORD</code> gesetzt werden; es wird nicht im Job-Metadaten-JSON persistiert.</p>
-      <p>Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code>, <code>document_capture.json</code>, <code>agent_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden. Lokale <code>document_paths</code> müssen auf dem Server existieren; Remote-Felder akzeptieren nur HTTP(S)-URLs.</p>
+  -d '{"target_url":"https://app.example.test","agentic":true,"agent_tasks":["teacher","logout"],"agent_persona":"Lehrkraefte","agent_username":"user@example.test","agent_password":"***","agent_vidis_portal":"Test Landesportal","agent_instructions":["Gehe auf Assistenten und prüfe die Übersicht"]}'</code></pre>
+      <p>Das Passwort wird nur an den laufenden Job übergeben und nie in den Job-Metadaten gespeichert. Alternativ setzt der Betrieb <code>VIDIS_AGENT_USERNAME</code>, <code>VIDIS_AGENT_PASSWORD</code> und <code>VIDIS_AGENT_VIDIS_PORTAL</code> auf dem Server. Optional: <code>agent_vidis_login_label</code>, <code>lighthouse</code>, <code>webinspector_export</code>.</p>
+      <h3>Eingabegrenzen</h3>
+      <ul>
+        <li><code>target_url</code> und Dokument-URLs müssen auf öffentliche Adressen zeigen; Ziele im internen Netz (localhost, private IP-Bereiche) werden mit <code>422</code> abgelehnt. <code>VIDIS_ALLOW_PRIVATE_TARGETS=1</code> hebt das für Testumgebungen auf.</li>
+        <li><code>code_path</code> und <code>document_paths</code> sind Pfade auf dem Server. Mit <code>VIDIS_ALLOWED_PATH_ROOTS</code> (im Container: <code>/data/inputs</code>) sind nur Pfade darunter erlaubt; <code>none</code> schaltet lokale Pfade ganz ab.</li>
+      </ul>
+      <p>Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code>, <code>document_capture.json</code>, <code>agent_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden.</p>
+      <h3>Betrieb mit Docker und Coolify</h3>
+      <p>Das Repository enthält ein <code>Dockerfile</code> (mit Chromium für die Browser-Prüfungen) und eine <code>compose.yaml</code>.</p>
+      <pre><code>VIDIS_API_KEYS="$(openssl rand -hex 32)" docker compose up -d --build</code></pre>
+      <p>In Coolify als Anwendung mit dem Build-Pack <em>Docker Compose</em> anlegen, <code>VIDIS_API_KEYS</code> als Umgebungsvariable setzen und dem Dienst <code>vidis-checker</code> die Domain mit Port <code>8645</code> zuweisen. Ergebnisse liegen im Volume <code>vidis-results</code>, serverseitige Eingabedateien im Volume <code>vidis-inputs</code>. <code>VIDIS_JOB_WORKERS</code> (Standard 2) begrenzt parallele Prüfungen; jeder laufende Job startet einen eigenen Chromium.</p>
     </section>
 
     <section id="outputs">

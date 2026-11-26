@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from vidis_compliance import server
+from vidis_compliance.checks.site.ipf import IpfSiteAnalysis, LegalPageResult
 from vidis_compliance.models import CheckFinding
 from vidis_compliance.sources.documents.analyze import DocumentInput
 
@@ -122,7 +123,13 @@ def test_job_exposes_public_screenshot_artifact_and_blocks_local_only_screenshot
 
     monkeypatch.setattr(server.cli_module, "crawl", lambda *args, **kwargs: FakeCapture())
     monkeypatch.setattr(server.cli_module, "check_site_transport", lambda url: [])
-    monkeypatch.setattr(server.cli_module, "analyze_ipf_site", lambda url: type("IpF", (), {"visited_urls": [], "impressum": type("Doc", (), {"url": None})(), "privacy": type("Doc", (), {"url": None})()})())
+    empty_ipf = IpfSiteAnalysis(
+        source_url="https://example.test",
+        visited_urls=[],
+        impressum=LegalPageResult(kind="impressum"),
+        privacy=LegalPageResult(kind="privacy"),
+    )
+    monkeypatch.setattr(server.cli_module, "analyze_ipf_site", lambda url: empty_ipf)
     monkeypatch.setattr(server.cli_module, "findings_from_ipf_analysis", lambda analysis: [])
     client = TestClient(server.app)
 
@@ -202,9 +209,9 @@ def test_api_requires_bearer_token_when_configured(tmp_path: Path, monkeypatch) 
     monkeypatch.setenv("VIDIS_API_KEY", "secret-token")
     client = TestClient(server.app)
 
-    missing = client.get("/criteria")
-    wrong = client.get("/criteria", headers={"Authorization": "Bearer wrong"})
-    allowed = client.get("/criteria", headers={"Authorization": "Bearer secret-token"})
+    missing = client.get("/jobs")
+    wrong = client.get("/jobs", headers={"Authorization": "Bearer wrong"})
+    allowed = client.get("/jobs", headers={"Authorization": "Bearer secret-token"})
 
     assert missing.status_code == 401
     assert wrong.status_code == 401
