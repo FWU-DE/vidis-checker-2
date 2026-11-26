@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from importlib import resources
 from pathlib import Path
 
@@ -28,6 +29,7 @@ def render_markdown(document: ReportDocument) -> str:
     template_text = resources.files("vidis_compliance.report.templates").joinpath("report.md.j2").read_text(encoding="utf-8")
     env = Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
     env.filters["table_escape"] = _escape_table
+    env.filters["md_safe"] = _md_safe
     template = env.from_string(template_text)
     raw_capture_json = ""
     if document.raw_capture:
@@ -52,5 +54,16 @@ def _sanitize_raw_capture(raw_capture: dict) -> dict:
     return sanitized
 
 
+def _md_safe(value: object) -> str:
+    """Neutralise what renders or loads by itself: raw HTML and images.
+
+    Notes and evidence carry text from the checked site and documents.
+    Ordinary links stay clickable; images (``![...](...)``) would load a
+    remote resource just by opening the report, and raw HTML can do more.
+    """
+    text = str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return re.sub(r"!(\s*)\[", r"!\1\\[", text)
+
+
 def _escape_table(value: str) -> str:
-    return str(value).replace("|", "\\|").replace("\n", "<br>")
+    return _md_safe(value).replace("|", "\\|").replace("\n", "<br>")

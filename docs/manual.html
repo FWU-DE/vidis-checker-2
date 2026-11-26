@@ -449,6 +449,10 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
       <h3>Eingabegrenzen</h3>
       <ul>
         <li><code>target_url</code> und Dokument-URLs müssen auf öffentliche Adressen zeigen; Ziele im internen Netz (localhost, private IP-Bereiche) werden mit <code>422</code> abgelehnt. Das gilt auch unterwegs: Jede Weiterleitung beim Abruf von Dokumenten und Rechtsseiten wird einzeln geprüft (höchstens fünf), und der Browser-Crawl lädt keine Seiten, Bilder oder Skripte von internen Adressen. Dokumente sind auf 15 MB begrenzt, Impressum- und Datenschutzseiten auf 3 MB. <code>VIDIS_ALLOW_PRIVATE_TARGETS=1</code> hebt die Adressprüfung für Testumgebungen auf.</li>
+        <li>Anfragen sind auf 256 KB begrenzt (sonst <code>413</code>), Benutzernamen auf 200, Passwörter auf 500, Agent-Anweisungen auf 20 mit je 500 Zeichen, <code>document_paths</code> auf 20 Einträge.</li>
+        <li>Ohne <code>VIDIS_ALLOWED_PATH_ROOTS</code> lehnt ein Server mit API-Schlüsseln lokale Pfade ganz ab.</li>
+        <li>Schlägt ein Job fehl, steht unter <code>error</code> nur eine für Aufrufer gedachte Meldung (etwa „HTTP 404 beim Abruf von …“ oder die Adressprüfung); interne Details landen im Server-Log.</li>
+        <li>Markdown-Berichte entschärfen Text aus geprüften Seiten und Dokumenten: rohes HTML und Bilder werden nicht dargestellt, Links bleiben anklickbar.</li>
         <li><code>code_path</code> und <code>document_paths</code> sind Pfade auf dem Server. Mit <code>VIDIS_ALLOWED_PATH_ROOTS</code> (im Container: <code>/data/inputs</code>) sind nur Pfade darunter erlaubt; <code>none</code> schaltet lokale Pfade ganz ab.</li>
       </ul>
       <p>Artefakte sind über <code>/jobs/&lt;job_id&gt;/artifacts/result.json</code>, <code>capture.json</code>, <code>code_capture.json</code>, <code>document_capture.json</code>, <code>agent_capture.json</code> und <code>job.json</code> abrufbar, sofern vorhanden.</p>
