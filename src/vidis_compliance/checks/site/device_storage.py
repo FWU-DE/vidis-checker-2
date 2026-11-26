@@ -91,6 +91,25 @@ def device_storage_decision(signals: list[DeviceStorageSignal], audience: str) -
     return "PASS", _note("Ausschließlich technisch erforderliche Device-/Browser-Storage-Indizien", technical)
 
 
+def device_storage_evidence(signals: Iterable[DeviceStorageSignal]) -> list[dict[str, Any]]:
+    """Each API access with how it was classified: technical, tracking or unresolved, and why."""
+    items = []
+    for signal in signals:
+        classification, purpose = _classify_signal(signal)
+        item = {
+            "api": signal.api,
+            "count": signal.count,
+            "url": signal.url,
+            "source": signal.source,
+            "context": signal.context,
+            "purpose_hint": signal.purpose_hint,
+            "classification": classification,
+            "purpose": purpose,
+        }
+        items.append({key: value for key, value in item.items() if value is not None})
+    return items
+
+
 def device_storage_signals_from_capture(data: dict[str, Any]) -> Iterable[DeviceStorageSignal]:
     browser_signals = data.get("browser_signals") or {}
     for item in browser_signals.get("device_storage", []) or []:

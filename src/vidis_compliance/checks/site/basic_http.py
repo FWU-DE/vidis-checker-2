@@ -122,6 +122,15 @@ def _probe_obsolete_tls(host: str, port: int = 443, timeout: float = 3.0) -> dic
     return results
 
 
+def _observation_evidence(observation: HttpObservation, url: str) -> dict[str, object]:
+    item: dict[str, object] = {"url": _safe_url(url), "status_code": observation.status_code}
+    if observation.location:
+        item["location"] = _safe_url(observation.location)
+    if observation.error:
+        item["error"] = observation.error
+    return item
+
+
 def _tls_finding(tls_results: Mapping[str, bool]) -> CheckFinding:
     accepted = [name for name, is_accepted in tls_results.items() if is_accepted]
     if accepted:
@@ -197,4 +206,9 @@ def check_site_transport(
             note=f"Obsolete TLS probe inconclusive: {type(exc).__name__}",
         )
 
+    reachability = {"https": _observation_evidence(https, https_url), "http": _observation_evidence(http, http_url)}
+    https_only.evidence = dict(reachability)
+    redirect.evidence = {"http": reachability["http"], "redirects_to_https": redirects}
+    if tls.status != "MANUELL":
+        tls.evidence = {"host": parsed.hostname or "", "port": port, "obsolete_protocols": dict(tls_results)}
     return [https_only, redirect, tls]

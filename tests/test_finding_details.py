@@ -133,7 +133,8 @@ def test_discovery_explains_outcomes_and_result_format(client: TestClient) -> No
     payload = client.get("/discovery").json()
 
     assert set(payload["result_format"]["reasons"]) == {"automated", "needs_review", "not_automated", "missing_input", "not_reachable"}
-    assert payload["result_format"]["example"]["reason"] == "needs_review"
+    assert payload["result_format"]["example"]["evidence"]["cookies"][0]["classification"] == "non_essential"
+    assert "classification" in payload["result_format"]["evidence_fields"]
     for check in payload["checks"]:
         if not check["id"].startswith("evidence."):
             assert check["outcomes"], check["id"]

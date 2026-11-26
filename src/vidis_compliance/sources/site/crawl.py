@@ -130,7 +130,8 @@ JS_BROWSER_SIGNALS = """
 }
 """.strip()
 
-ConsentHook = Callable[[Page], None]
+# Returns what it clicked (truthy) or nothing; the crawl records it as the consent click.
+ConsentHook = Callable[[Page], object]
 
 
 class _LinkParser(HTMLParser):
@@ -203,6 +204,8 @@ class PageCapture:
     visited_urls: List[str] = field(default_factory=list)
     screenshots: List[dict] = field(default_factory=list)
     vision_reviews: List[dict] = field(default_factory=list)
+    # Where and what the crawl clicked to accept a cookie banner; None when it clicked nothing.
+    consent_click: dict | None = None
 
 
 def _clean_internal_url(base_url: str, href: str | None) -> str | None:
@@ -286,6 +289,10 @@ def _dedupe_screenshots(values: Iterable[dict]) -> List[dict]:
     return [by_page[key] for key in sorted(by_page)]
 
 
+def _cookie_identity(cookie: dict) -> tuple[str, str, str]:
+    return (str(cookie.get("domain") or ""), str(cookie.get("path") or ""), str(cookie.get("name") or ""))
+
+
 def _cookie_key(cookie: dict) -> tuple[str, str, str, str]:
     return (
         str(cookie.get("domain") or ""),
@@ -331,6 +338,9 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
     vision_reviews: list[dict] = []
 
     seen_visited_urls: set[str] = set()
+    # Earliest sighting per cookie: on which page, and whether no consent had been clicked yet.
+    first_seen: dict[tuple[str, str, str], dict] = {}
+    consent_click: dict | None = None
 
     for capture in captures:
         canonical_capture_url = _canonical_page_url(capture.url)
@@ -339,6 +349,14 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
             visited_urls.append(capture.url)
         for cookie in capture.cookies:
             cookies_by_key[_cookie_key(cookie)] = cookie
+            identity = _cookie_identity(cookie)
+            if identity not in first_seen and "first_seen_url" in cookie:
+                first_seen[identity] = {
+                    "first_seen_url": cookie.get("first_seen_url"),
+                    "before_consent_click": consent_click is None and bool(cookie.get("before_consent_click")),
+                }
+        if consent_click is None and capture.consent_click:
+            consent_click = capture.consent_click
         local_storage.update(capture.local_storage)
         session_storage.update(capture.session_storage)
         scripts.extend(capture.scripts)
@@ -367,7 +385,10 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
 
     return PageCapture(
         url=captures[0].url,
-        cookies=[cookies_by_key[key] for key in sorted(cookies_by_key)],
+        cookies=[
+            {**cookies_by_key[key], **first_seen.get(_cookie_identity(cookies_by_key[key]), {})}
+            for key in sorted(cookies_by_key)
+        ],
         local_storage=dict(sorted(local_storage.items())),
         session_storage=dict(sorted(session_storage.items())),
         scripts=_dedupe_sorted(scripts),
@@ -379,10 +400,11 @@ def aggregate_captures(captures: Sequence[PageCapture]) -> PageCapture:
         visited_urls=visited_urls,
         screenshots=_dedupe_screenshots(screenshots),
         vision_reviews=_dedupe_dicts(vision_reviews, ("label", "note")),
+        consent_click=consent_click,
     )
 
 
-def _default_consent_hook(page: Page) -> None:
+def _default_consent_hook(page: Page) -> str | None:
     selectors = [
         "button:has-text('Alle akzeptieren')",
         "button:has-text('Akzeptieren')",
@@ -396,10 +418,14 @@ def _default_consent_hook(page: Page) -> None:
             locator = page.locator(selector).first
             if locator.count() > 0 and locator.is_visible(timeout=500):
                 locator.click(timeout=1000)
-                page.wait_for_load_state("networkidle", timeout=3000)
-                return
+                try:
+                    page.wait_for_load_state("networkidle", timeout=3000)
+                except Exception:
+                    pass
+                return selector
         except Exception:
             continue
+    return None
 
 
 def _capture_page(
@@ -422,12 +448,15 @@ def _capture_page(
         pass
     if guard is not None:
         guard.assert_safe(page)
-    if consent_hook is not None:
-        consent_hook(page)
+    before_consent = {_cookie_identity(cookie) for cookie in context.cookies()}
+    clicked = consent_hook(page) if consent_hook is not None else None
     if guard is not None:
         guard.assert_safe(page)
 
-    cookies = context.cookies()
+    cookies = [
+        {**cookie, "first_seen_url": page.url, "before_consent_click": _cookie_identity(cookie) in before_consent}
+        for cookie in context.cookies()
+    ]
     local_storage = page.evaluate(JS_LOCAL)
     session_storage = page.evaluate(JS_SESSION)
     resources = page.evaluate(JS_RESOURCES)
@@ -469,6 +498,7 @@ def _capture_page(
         visible_text=visible_text,
         browser_signals=browser_signals,
         screenshots=screenshots,
+        consent_click={"url": page.url, "selector": str(clicked)} if clicked else None,
     )
 
 
