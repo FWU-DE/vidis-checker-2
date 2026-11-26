@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 from . import cli as cli_module
 from .catalog import CHECK_IDS, CHECKS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
+from .util import llm as llm_module
 from .util.llm import llm_status
 from .models import JobResult
 from .report.markdown import generate_markdown
@@ -228,7 +229,35 @@ protected = APIRouter(tags=["jobs"], dependencies=[Security(require_api_key)])
 
 @public.get("/health")
 def health():
-    return {"status": "ok", "version": SERVICE_VERSION, "llm": llm_status()}
+    """Cheap liveness check; shows the last model check from /status but never starts one."""
+    llm = llm_status()
+    probe = llm_module.public_probe(llm_module.last_probe())
+    if probe is not None:
+        llm["availability"] = probe
+    return {"status": "ok", "version": SERVICE_VERSION, "llm": llm}
+
+
+@public.get("/status")
+def service_status(refresh: bool = Query(default=False, description="Modelle sofort neu prüfen (sonst höchstens alle 10 Minuten)")):
+    """Service status: which LLM models answer, job queue, crawl cache."""
+    llm = llm_status()
+    if llm.get("configured"):
+        llm["availability"] = llm_module.public_probe(llm_module.probe_models(force=refresh))
+    counts = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
+    for job in _list_metadata():
+        counts[job.status] = counts.get(job.status, 0) + 1
+    cache_dir = Path(os.environ.get("VIDIS_CRAWL_CACHE_DIR") or (_results_root() / ".crawl-cache"))
+    entries = [entry for entry in cache_dir.iterdir() if entry.is_dir() and not entry.name.startswith(".")] if cache_dir.is_dir() else []
+    degraded = bool(llm.get("configured")) and not any(
+        model.get("available") for model in ((llm.get("availability") or {}).get("models") or {}).values()
+    )
+    return {
+        "status": "degraded" if degraded else "ok",
+        "version": SERVICE_VERSION,
+        "llm": llm,
+        "jobs": {**counts, "workers": _JOB_EXECUTOR._max_workers},
+        "crawl_cache": {"entries": len(entries), "default_max_age_seconds": 1800},
+    }
 
 
 @public.get("/criteria")
@@ -274,11 +303,12 @@ def discovery(request: Request):
                 {"type": "http", "scheme": "bearer", "header": "Authorization: Bearer <key>"},
                 {"type": "apiKey", "in": "header", "name": "X-API-Key"},
             ],
-            "public_paths": ["/health", "/discovery", "/.well-known/vidis-checks", "/criteria", "/checks", "/docs", "/openapi.json"],
+            "public_paths": ["/health", "/status", "/discovery", "/.well-known/vidis-checks", "/criteria", "/checks", "/docs", "/openapi.json"],
         },
         "endpoints": [
             {"method": "POST", "path": "/jobs", "auth": True, "description": "Prüfung starten (asynchron); optional nur einzelne Prüfungen über checks"},
             {"method": "GET", "path": "/checks", "auth": False, "description": "Verfügbare Prüfungen"},
+            {"method": "GET", "path": "/status", "auth": False, "description": "Dienststatus: erreichbare KI-Modelle, Job-Warteschlange, Crawl-Cache"},
             {"method": "GET", "path": "/checks/{check_id}", "auth": False, "description": "Eine Prüfung mit Kriterien und nötigen Eingaben"},
             {"method": "POST", "path": "/checks/{check_id}", "auth": True, "description": "Genau diese eine Prüfung als Job starten (asynchron)"},
             {"method": "GET", "path": "/jobs", "auth": True, "description": "Jobs auflisten, Filter status, limit, offset"},

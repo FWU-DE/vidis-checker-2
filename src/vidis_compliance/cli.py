@@ -74,7 +74,12 @@ def _extract_privacy_text_for_cookie_descriptions(document_inputs) -> str:
     return "\n".join(texts)
 
 
-def _ai_model_entry(value: str | None) -> dict[str, Any] | None:
+def _ai_model_entry(
+    value: str | None,
+    *,
+    task: str = "VIDIS KI-Bewertungen",
+    status: str = "vom CLI übergeben",
+) -> dict[str, Any] | None:
     if not value:
         return None
     provider = "—"
@@ -82,15 +87,15 @@ def _ai_model_entry(value: str | None) -> dict[str, Any] | None:
     if ":" in model:
         provider, model = model.split(":", 1)
     return {
-        "task": "VIDIS KI-Bewertungen",
+        "task": task,
         "provider": provider.strip() or "—",
         "model": model.strip() or "nicht angegeben",
-        "status": "vom CLI übergeben",
+        "status": status,
     }
 
 
-def _append_ai_model_metadata(raw_capture: dict[str, Any] | None, ai_model: str | None) -> dict[str, Any] | None:
-    entry = _ai_model_entry(ai_model)
+def _append_ai_model_metadata(raw_capture: dict[str, Any] | None, ai_model: str | None, **entry_fields: str) -> dict[str, Any] | None:
+    entry = _ai_model_entry(ai_model, **entry_fields)
     if entry is None:
         return raw_capture
     if raw_capture is None:
@@ -337,7 +342,9 @@ def run_checks(
             if not crawl_info["cached"] or new_reviews is not None:
                 crawl_cache.store(cache_dir, url, pages, cap, new_reviews, created=crawl_info.get("created"))
         for model in sorted({str(r.get("model")) for r in raw_capture["vision_reviews"] if r.get("model")}):
-            raw_capture = _append_ai_model_metadata(raw_capture, f"vertex:{model}")
+            raw_capture = _append_ai_model_metadata(
+                raw_capture, f"vertex:{model}", task="Bewertung der Screenshots", status="vom Dienst genutzt"
+            )
         crawl_info.pop("created", None)
         raw_capture["crawl"] = crawl_info
         if lighthouse:

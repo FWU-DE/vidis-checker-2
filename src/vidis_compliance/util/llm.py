@@ -188,3 +188,67 @@ def _post(config: LlmConfig, model: str, payload: dict[str, Any]) -> httpx.Respo
         )
     except Exception as exc:  # network or auth failure
         raise LlmError(f"Vertex AI request failed: {type(exc).__name__}") from exc
+
+
+PROBE_CACHE_SECONDS = 600
+# A forced refresh still waits this long, so ?refresh=true cannot be used to run up costs.
+PROBE_MIN_INTERVAL_SECONDS = 60
+_PROBE_LOCK = threading.Lock()
+_PROBE: dict[str, Any] = {}
+
+
+def last_probe() -> dict[str, Any] | None:
+    """The most recent model availability check, without starting a new one."""
+    return dict(_PROBE) if _PROBE else None
+
+
+def probe_models(force: bool = False) -> dict[str, Any] | None:
+    """Check with a tiny request which configured models answer.
+
+    Results are kept for ``PROBE_CACHE_SECONDS`` so a public status page cannot
+    run up model costs. Returns ``None`` when no model is configured.
+    """
+    import time
+    from datetime import datetime, timezone
+
+    config = load_config()
+    if config is None:
+        return None
+    with _PROBE_LOCK:
+        age = time.time() - _PROBE["_checked"] if _PROBE else None
+        limit = PROBE_MIN_INTERVAL_SECONDS if force else PROBE_CACHE_SECONDS
+        if age is not None and age < limit and _PROBE.get("_models") == sorted(set(config.models.values())):
+            return last_probe()
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": "Antworte nur mit: ok"}]}],
+            "generationConfig": {"temperature": 0, "maxOutputTokens": 32},
+        }
+        models: dict[str, Any] = {}
+        for model in sorted(set(config.models.values())):
+            started = time.monotonic()
+            try:
+                response = _post(config, model, payload)
+                ok = response.status_code == 200
+                entry: dict[str, Any] = {"available": ok, "http_status": response.status_code}
+            except LlmError as exc:
+                entry = {"available": False, "error": str(exc)}
+            entry["latency_ms"] = int((time.monotonic() - started) * 1000)
+            entry["tiers"] = [tier for tier, name in config.models.items() if name == model]
+            models[model] = entry
+        _PROBE.clear()
+        _PROBE.update(
+            {
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "cache_seconds": PROBE_CACHE_SECONDS,
+                "models": models,
+                "_checked": time.time(),
+                "_models": sorted(models),
+            }
+        )
+        return last_probe()
+
+
+def public_probe(probe: dict[str, Any] | None) -> dict[str, Any] | None:
+    if probe is None:
+        return None
+    return {key: value for key, value in probe.items() if not key.startswith("_")}
