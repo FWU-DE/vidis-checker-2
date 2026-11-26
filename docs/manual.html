@@ -361,6 +361,14 @@ uv run vidis check \
       <pre><code>export VIDIS_API_KEYS='schluessel-1,schluessel-2'
 uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
       <p>Ohne <code>VIDIS_API_KEYS</code> startet <code>vidis serve</code> nur auf <code>127.0.0.1</code> und ist dort ohne Anmeldung offen. Auf jeder anderen Adresse verweigert der Server den Start. Läuft die API ohne Schlüssel und ohne <code>VIDIS_AUTH_DISABLED=1</code>, antworten alle Job-Endpunkte mit <code>503</code>.</p>
+      <h3>Versionierung</h3>
+      <p>Alles, was Testsuiten und Agents auslesen, hat eine gemeinsame Version nach <a href="https://semver.org/lang/de/">SemVer</a>: API-Schema, <code>/discovery</code>, <code>/checks</code>, <code>/criteria</code>, Job- und Ergebnis-JSON, Callback und die Belegfelder in den Captures. Sie steht in <code>/discovery</code> unter <code>api_version</code>, in jeder Antwort im Header <code>X-VIDIS-API-Version</code>, in <code>/openapi.json</code> unter <code>info.version</code> und in jedem Job, Ergebnis, Capture und Callback unter <code>api_version</code>. Jobs von vor 1.0.0 haben dort <code>null</code>.</p>
+      <ul>
+        <li><strong>MAJOR</strong>: Ein Feld, Endpunkt, eine Prüfung oder ein Kriterium entfällt oder wird umbenannt, oder ein Wert ändert seine Bedeutung. Aufrufer müssen ihren Code prüfen.</li>
+        <li><strong>MINOR</strong>: Neue Felder, Endpunkte, Prüfungen oder Kriterien. Bestehende Aufrufe laufen unverändert.</li>
+        <li><strong>PATCH</strong>: Eine Prüfung entscheidet genauer, ohne dass sich das Format ändert. Ergebnisse einzelner Kriterien können sich ändern.</li>
+      </ul>
+      <p>Was sich je Version geändert hat, steht im <a href="https://github.com/FWU-DE/vidis-checker-2/blob/main/CHANGELOG.md">Changelog</a>. Die VIDIS-Prüfkriterien selbst haben eine eigene Version (<code>criteria_catalog.version</code> in <code>/discovery</code>, derzeit V0.2).</p>
       <h3>Anmeldung</h3>
       <p>Alle Endpunkte unter <code>/jobs</code>, <code>POST /checks/&lt;id&gt;</code> und <code>POST /criteria/&lt;code&gt;</code> brauchen einen der Schlüssel aus <code>VIDIS_API_KEYS</code> (kommagetrennt, jeder Schlüssel hat vollen Zugriff), als <code>Authorization: Bearer &lt;key&gt;</code> oder <code>X-API-Key: &lt;key&gt;</code>. Ohne gültigen Schlüssel kommt <code>401</code>. <code>VIDIS_API_KEY</code> mit einem einzelnen Schlüssel funktioniert weiterhin.</p>
       <p>Jeder Schlüssel sieht nur die Jobs, die mit ihm angelegt wurden: Liste, Status, Ergebnisse, Artefakte, Berichte und ZIP. Fremde Jobs antworten mit <code>404</code>, als gäbe es sie nicht. Schlüssel in <code>VIDIS_ADMIN_KEYS</code> (kommagetrennt) sehen alle Jobs, auch solche aus der Zeit vor dieser Trennung. Berichte über die API enthalten keine Screenshots aus angemeldeten Bereichen.</p>

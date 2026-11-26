@@ -1,0 +1,2308 @@
+{
+  "api_version": "1.0.0",
+  "contract": {
+    "callback_payload": [
+      "api_version",
+      "checks",
+      "error",
+      "event",
+      "finished_at",
+      "job_id",
+      "links",
+      "status",
+      "summary",
+      "target_url",
+      "summary.FAIL",
+      "summary.MANUELL",
+      "summary.PASS",
+      "summary.findings",
+      "summary.reasons",
+      "links.archive",
+      "links.job",
+      "links.reports"
+    ],
+    "checks": {
+      "agentic.persona_crawl": {
+        "criteria": [
+          "RDS-CUC-371",
+          "RDS-CUC-372",
+          "RDS-CUC-373",
+          "RDS-CUC-374",
+          "RDS-CUC-375",
+          "RDS-CUC-376",
+          "RDS-CUC-377",
+          "RDS-CUC-453",
+          "RDS-WER-384",
+          "RDS-WER-385",
+          "RDS-VIN-354",
+          "RDS-IPF-364",
+          "RDS-IPF-365",
+          "RDS-IPF-366",
+          "RDS-IPF-367",
+          "RDS-DSO-383"
+        ],
+        "enabled_by": "agentic",
+        "evidence_keys": [
+          "visited_urls",
+          "cookies",
+          "local_storage",
+          "session_storage",
+          "counts",
+          "non_essential",
+          "observed",
+          "present",
+          "missing",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "agentic"
+      },
+      "code.inspection": {
+        "criteria": [
+          "RDS-CDN-379",
+          "RDS-CUC-371",
+          "RDS-CUC-372",
+          "RDS-CUC-373",
+          "RDS-CUC-374",
+          "RDS-CUC-375",
+          "RDS-CUC-376",
+          "RDS-CUC-377",
+          "RDS-DEV-380",
+          "RDS-IPF-364",
+          "RDS-IPF-365"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "files_scanned",
+          "code_hits",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "code"
+      },
+      "documents.analysis": {
+        "criteria": [
+          "RDS-DEV-380",
+          "RDS-DEV-381",
+          "RDS-DEV-466",
+          "RDS-DSO-383",
+          "RDS-AGB-368",
+          "RDS-AGB-369",
+          "RDS-SPE-370",
+          "RDS-CUC-377",
+          "RDS-CUC-453"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "documents",
+          "snippets",
+          "discovery",
+          "skipped",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/missing_input",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "documents"
+      },
+      "evidence.lighthouse": {
+        "criteria": [],
+        "enabled_by": "lighthouse",
+        "evidence_keys": [],
+        "outcomes": [],
+        "source": "evidence"
+      },
+      "evidence.webinspector": {
+        "criteria": [],
+        "enabled_by": "webinspector_export",
+        "evidence_keys": [],
+        "outcomes": [],
+        "source": "evidence"
+      },
+      "site.advertising": {
+        "criteria": [
+          "RDS-WER-384"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "ad_signals",
+          "vision_reviews",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.browser_storage": {
+        "criteria": [
+          "RDS-CUC-374"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "local_storage_keys",
+          "session_storage_keys",
+          "local_storage",
+          "session_storage",
+          "counts",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.cookie_descriptions": {
+        "criteria": [
+          "RDS-CUC-453"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "observed",
+          "present",
+          "missing"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/missing_input",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.cookies": {
+        "criteria": [
+          "RDS-CUC-371",
+          "RDS-CUC-372"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "cookies",
+          "local_storage",
+          "session_storage",
+          "counts",
+          "consent_click",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.device_storage": {
+        "criteria": [
+          "RDS-CUC-375"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "browser_signals",
+          "device_storage",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.fingerprinting": {
+        "criteria": [
+          "RDS-CUC-376"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "browser_signals",
+          "fingerprinting_apis",
+          "truncated"
+        ],
+        "outcomes": [
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.legal_pages": {
+        "criteria": [
+          "RDS-IPF-364",
+          "RDS-IPF-365",
+          "RDS-IPF-366",
+          "RDS-IPF-367"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "impressum_url",
+          "privacy_url",
+          "impressum_found",
+          "impressum_missing",
+          "impressum_manual",
+          "privacy_found",
+          "privacy_missing",
+          "privacy_manual",
+          "privacy_dpo_absent_declared",
+          "visited_urls"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.outbound_ad_links": {
+        "criteria": [
+          "RDS-WER-385"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "ad_links",
+          "external_links",
+          "vision_reviews",
+          "truncated"
+        ],
+        "outcomes": [
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.tracking_mechanisms": {
+        "criteria": [
+          "RDS-CUC-377"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "trackers",
+          "non_essential",
+          "fingerprinting_apis",
+          "pedagogical_purpose",
+          "third_party_hosts",
+          "requests",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.tracking_pixel": {
+        "criteria": [
+          "RDS-CUC-373"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "trackers",
+          "third_party_hosts",
+          "requests",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.transport": {
+        "criteria": [
+          "ITS-ENC-359",
+          "ITS-ENC-360",
+          "ITS-ENC-361"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "https",
+          "http",
+          "redirects_to_https",
+          "host",
+          "port",
+          "obsolete_protocols"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      },
+      "site.youth_protection": {
+        "criteria": [
+          "RDS-VIN-354"
+        ],
+        "enabled_by": null,
+        "evidence_keys": [
+          "pages",
+          "youth_signals",
+          "vision_reviews",
+          "truncated"
+        ],
+        "outcomes": [
+          "FAIL/automated",
+          "MANUELL/needs_review",
+          "PASS/automated"
+        ],
+        "source": "site"
+      }
+    },
+    "criteria": {
+      "ITS-ENC-359": {
+        "optional": [],
+        "required": [
+          "site.transport"
+        ]
+      },
+      "ITS-ENC-360": {
+        "optional": [],
+        "required": [
+          "site.transport"
+        ]
+      },
+      "ITS-ENC-361": {
+        "optional": [],
+        "required": [
+          "site.transport"
+        ]
+      },
+      "RDS-AGB-368": {
+        "optional": [],
+        "required": [
+          "documents.analysis"
+        ]
+      },
+      "RDS-AGB-369": {
+        "optional": [],
+        "required": [
+          "documents.analysis"
+        ]
+      },
+      "RDS-CDN-379": {
+        "optional": [
+          "code.inspection"
+        ],
+        "required": []
+      },
+      "RDS-CUC-371": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.cookies"
+        ]
+      },
+      "RDS-CUC-372": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.cookies"
+        ]
+      },
+      "RDS-CUC-373": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.tracking_pixel"
+        ]
+      },
+      "RDS-CUC-374": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.browser_storage"
+        ]
+      },
+      "RDS-CUC-375": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.device_storage"
+        ]
+      },
+      "RDS-CUC-376": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.fingerprinting"
+        ]
+      },
+      "RDS-CUC-377": {
+        "optional": [
+          "code.inspection",
+          "documents.analysis",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.tracking_mechanisms"
+        ]
+      },
+      "RDS-CUC-453": {
+        "optional": [
+          "documents.analysis",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.cookie_descriptions"
+        ]
+      },
+      "RDS-DEV-380": {
+        "optional": [
+          "code.inspection"
+        ],
+        "required": [
+          "documents.analysis"
+        ]
+      },
+      "RDS-DEV-381": {
+        "optional": [],
+        "required": [
+          "documents.analysis"
+        ]
+      },
+      "RDS-DEV-466": {
+        "optional": [],
+        "required": [
+          "documents.analysis"
+        ]
+      },
+      "RDS-DSO-383": {
+        "optional": [
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "documents.analysis"
+        ]
+      },
+      "RDS-IPF-364": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.legal_pages"
+        ]
+      },
+      "RDS-IPF-365": {
+        "optional": [
+          "code.inspection",
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.legal_pages"
+        ]
+      },
+      "RDS-IPF-366": {
+        "optional": [
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.legal_pages"
+        ]
+      },
+      "RDS-IPF-367": {
+        "optional": [
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.legal_pages"
+        ]
+      },
+      "RDS-SPE-370": {
+        "optional": [],
+        "required": [
+          "documents.analysis"
+        ]
+      },
+      "RDS-VIN-354": {
+        "optional": [
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.youth_protection"
+        ]
+      },
+      "RDS-WER-384": {
+        "optional": [
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.advertising"
+        ]
+      },
+      "RDS-WER-385": {
+        "optional": [
+          "agentic.persona_crawl"
+        ],
+        "required": [
+          "site.outbound_ad_links"
+        ]
+      }
+    },
+    "openapi": {
+      "components": {
+        "schemas": {
+          "CheckFinding": {
+            "properties": {
+              "artifacts": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "check": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "criterion": {
+                "type": "string"
+              },
+              "evidence": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "note": {
+                "default": "",
+                "type": "string"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "automated",
+                      "needs_review",
+                      "not_automated",
+                      "missing_input",
+                      "not_reachable"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "review_hint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FAIL",
+                  "MANUELL"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "criterion",
+              "status"
+            ],
+            "type": "object"
+          },
+          "CheckRunRequest": {
+            "additionalProperties": false,
+            "properties": {
+              "agb_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_instructions": {
+                "items": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "agent_password": {
+                "anyOf": [
+                  {
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_persona": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "SuS",
+                      "Lehrkraefte",
+                      "beide"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_tasks": {
+                "items": {
+                  "enum": [
+                    "legal",
+                    "student",
+                    "teacher",
+                    "register",
+                    "logout"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "agent_username": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_vidis_login_label": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_vidis_portal": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "avv_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "callback_secret": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "minLength": 16,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "callback_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "code_path": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "crawl_max_age": {
+                "default": 1800,
+                "maximum": 86400.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "document_paths": {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "pages": {
+                "default": 8,
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              "privacy_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_audience": {
+                "default": "beide",
+                "enum": [
+                  "SuS",
+                  "Lehrkraefte",
+                  "beide"
+                ],
+                "type": "string"
+              },
+              "target_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "HTTPValidationError": {
+            "properties": {
+              "detail": {
+                "items": {
+                  "$ref": "#/components/schemas/ValidationError"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "JobCreateRequest-Input": {
+            "properties": {
+              "agb_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_instructions": {
+                "items": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "agent_password": {
+                "anyOf": [
+                  {
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_persona": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "SuS",
+                      "Lehrkraefte",
+                      "beide"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_tasks": {
+                "items": {
+                  "enum": [
+                    "legal",
+                    "student",
+                    "teacher",
+                    "register",
+                    "logout"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "agent_username": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_vidis_login_label": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_vidis_portal": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agentic": {
+                "default": false,
+                "type": "boolean"
+              },
+              "avv_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "callback_secret": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "minLength": 16,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "callback_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "checks": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 17,
+                "type": "array"
+              },
+              "code_path": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "crawl_max_age": {
+                "default": 1800,
+                "maximum": 86400.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "criteria": {
+                "items": {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "document_path": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "document_paths": {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "lighthouse": {
+                "default": false,
+                "type": "boolean"
+              },
+              "pages": {
+                "default": 8,
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              "privacy_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_audience": {
+                "default": "beide",
+                "enum": [
+                  "SuS",
+                  "Lehrkraefte",
+                  "beide"
+                ],
+                "type": "string"
+              },
+              "target_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "webinspector_export": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "JobCreateRequest-Output": {
+            "properties": {
+              "agb_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_instructions": {
+                "items": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "agent_persona": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "SuS",
+                      "Lehrkraefte",
+                      "beide"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_tasks": {
+                "items": {
+                  "enum": [
+                    "legal",
+                    "student",
+                    "teacher",
+                    "register",
+                    "logout"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "agent_username": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_vidis_login_label": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_vidis_portal": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agentic": {
+                "default": false,
+                "type": "boolean"
+              },
+              "avv_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "callback_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "checks": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 17,
+                "type": "array"
+              },
+              "code_path": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "crawl_max_age": {
+                "default": 1800,
+                "maximum": 86400.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "criteria": {
+                "items": {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "document_path": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "document_paths": {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "lighthouse": {
+                "default": false,
+                "type": "boolean"
+              },
+              "pages": {
+                "default": 8,
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              "privacy_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_audience": {
+                "default": "beide",
+                "enum": [
+                  "SuS",
+                  "Lehrkraefte",
+                  "beide"
+                ],
+                "type": "string"
+              },
+              "target_url": {
+                "anyOf": [
+                  {
+                    "format": "uri",
+                    "maxLength": 2083,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "webinspector_export": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "JobCreatedResponse": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              "status_url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "status_url"
+            ],
+            "type": "object"
+          },
+          "JobListResponse": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/JobSummary"
+                },
+                "type": "array"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total",
+              "limit",
+              "offset",
+              "items"
+            ],
+            "type": "object"
+          },
+          "JobMetadata": {
+            "properties": {
+              "api_version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "artifacts": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "callback": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "owner": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reports": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "request": {
+                "$ref": "#/components/schemas/JobCreateRequest-Output"
+              },
+              "result": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/JobResult"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "created_at",
+              "updated_at",
+              "request"
+            ],
+            "type": "object"
+          },
+          "JobResult": {
+            "properties": {
+              "api_version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/CheckFinding"
+                },
+                "type": "array"
+              },
+              "job_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id"
+            ],
+            "type": "object"
+          },
+          "JobSummary": {
+            "properties": {
+              "artifacts": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "reports": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "request": {
+                "$ref": "#/components/schemas/JobCreateRequest-Output"
+              },
+              "status": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "created_at",
+              "updated_at",
+              "request"
+            ],
+            "type": "object"
+          },
+          "ReportCreateRequest": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "md",
+                  "pdf"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "format"
+            ],
+            "type": "object"
+          },
+          "ReportCreatedResponse": {
+            "properties": {
+              "download_url": {
+                "type": "string"
+              },
+              "format": {
+                "enum": [
+                  "md",
+                  "pdf"
+                ],
+                "type": "string"
+              },
+              "job_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "job_id",
+              "format",
+              "download_url"
+            ],
+            "type": "object"
+          },
+          "ValidationError": {
+            "properties": {
+              "ctx": {
+                "type": "object"
+              },
+              "input": {},
+              "loc": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              "msg": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "loc",
+              "msg",
+              "type"
+            ],
+            "type": "object"
+          }
+        },
+        "securitySchemes": {
+          "APIKeyHeader": {
+            "in": "header",
+            "name": "X-API-Key",
+            "type": "apiKey"
+          },
+          "HTTPBearer": {
+            "scheme": "bearer",
+            "type": "http"
+          }
+        }
+      },
+      "openapi": "3.1.0",
+      "paths": {
+        "/checks": {
+          "get": {
+            "operationId": "list_checks_checks_get",
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              }
+            },
+            "tags": [
+              "public"
+            ]
+          }
+        },
+        "/checks/{check_id}": {
+          "get": {
+            "operationId": "get_check_definition_checks__check_id__get",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "check_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "tags": [
+              "public"
+            ]
+          },
+          "post": {
+            "operationId": "run_single_check_checks__check_id__post",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "check_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/CheckRunRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "202": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {
+                      "$ref": "#/components/schemas/JobCreatedResponse"
+                    }
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/criteria": {
+          "get": {
+            "operationId": "criteria_criteria_get",
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              }
+            },
+            "tags": [
+              "public"
+            ]
+          }
+        },
+        "/criteria/{code}": {
+          "post": {
+            "operationId": "run_single_criterion_criteria__code__post",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "code",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/CheckRunRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "202": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {
+                      "$ref": "#/components/schemas/JobCreatedResponse"
+                    }
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/discovery": {
+          "get": {
+            "operationId": "discovery_discovery_get",
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              }
+            },
+            "tags": [
+              "public"
+            ]
+          }
+        },
+        "/health": {
+          "get": {
+            "operationId": "health_health_get",
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              }
+            },
+            "tags": [
+              "public"
+            ]
+          }
+        },
+        "/jobs": {
+          "get": {
+            "operationId": "list_jobs_jobs_get",
+            "parameters": [
+              {
+                "in": "query",
+                "name": "status",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "queued",
+                        "running",
+                        "completed",
+                        "failed"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              {
+                "in": "query",
+                "name": "limit",
+                "required": false,
+                "schema": {
+                  "default": 100,
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              {
+                "in": "query",
+                "name": "offset",
+                "required": false,
+                "schema": {
+                  "default": 0,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {
+                      "$ref": "#/components/schemas/JobListResponse"
+                    }
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          },
+          "post": {
+            "operationId": "create_job_jobs_post",
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/JobCreateRequest-Input"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "202": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {
+                      "$ref": "#/components/schemas/JobCreatedResponse"
+                    }
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/jobs/{job_id}": {
+          "get": {
+            "operationId": "get_job_jobs__job_id__get",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "job_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {
+                      "$ref": "#/components/schemas/JobMetadata"
+                    }
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/jobs/{job_id}/archive.zip": {
+          "get": {
+            "operationId": "get_archive_jobs__job_id__archive_zip_get",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "job_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/jobs/{job_id}/artifacts/{artifact_name}": {
+          "get": {
+            "operationId": "get_artifact_jobs__job_id__artifacts__artifact_name__get",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "job_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              {
+                "in": "path",
+                "name": "artifact_name",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/jobs/{job_id}/reports": {
+          "post": {
+            "operationId": "create_report_jobs__job_id__reports_post",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "job_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReportCreateRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "201": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {
+                      "$ref": "#/components/schemas/ReportCreatedResponse"
+                    }
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/jobs/{job_id}/reports/{report_name}": {
+          "get": {
+            "operationId": "get_report_jobs__job_id__reports__report_name__get",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "job_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              {
+                "in": "path",
+                "name": "report_name",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "security": [
+              {
+                "HTTPBearer": []
+              },
+              {
+                "APIKeyHeader": []
+              }
+            ],
+            "tags": [
+              "jobs"
+            ]
+          }
+        },
+        "/manual/{path}": {
+          "get": {
+            "operationId": "manual_manual__path__get",
+            "parameters": [
+              {
+                "in": "path",
+                "name": "path",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "tags": [
+              "public"
+            ]
+          }
+        },
+        "/status": {
+          "get": {
+            "operationId": "service_status_status_get",
+            "parameters": [
+              {
+                "in": "query",
+                "name": "refresh",
+                "required": false,
+                "schema": {
+                  "default": false,
+                  "type": "boolean"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json; charset=utf-8": {
+                    "schema": {}
+                  }
+                }
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  }
+                }
+              }
+            },
+            "tags": [
+              "public"
+            ]
+          }
+        }
+      }
+    },
+    "reasons": [
+      "automated",
+      "missing_input",
+      "needs_review",
+      "not_automated",
+      "not_reachable"
+    ]
+  }
+}

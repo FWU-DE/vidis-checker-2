@@ -14,7 +14,6 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from importlib.metadata import PackageNotFoundError, version as package_version
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -36,13 +35,11 @@ from .cli import load_criteria
 from .util import llm as llm_module
 from .util.llm import llm_status
 from .models import JobResult
+from .version import API_VERSION, HEADER as API_VERSION_HEADER
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 
-try:
-    SERVICE_VERSION = package_version("vidis-compliance")
-except PackageNotFoundError:  # pragma: no cover - running from a source tree without install
-    SERVICE_VERSION = "0.0.0"
+SERVICE_VERSION = API_VERSION
 
 class Utf8JSONResponse(JSONResponse):
     """JSON with an explicit UTF-8 charset and indentation.
@@ -69,6 +66,13 @@ app = FastAPI(
 )
 
 MAX_REQUEST_BYTES = 256 * 1024
+
+
+@app.middleware("http")
+async def _api_version_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers[API_VERSION_HEADER] = API_VERSION
+    return response
 
 
 @app.middleware("http")
@@ -259,6 +263,8 @@ class JobMetadata(BaseModel):
     request: JobCreateRequest
     result: JobResult | None = None
     error: str | None = None
+    # Contract version that ran the job; None for jobs from before 1.0.0.
+    api_version: str | None = None
     artifacts: dict[str, str] = Field(default_factory=dict)
     reports: dict[str, str] = Field(default_factory=dict)
     callback: dict[str, Any] | None = None
@@ -474,6 +480,15 @@ def discovery(request: Request):
     return {
         "service": "vidis-compliance",
         "version": SERVICE_VERSION,
+        "api_version": API_VERSION,
+        "versioning": {
+            "scheme": "semver",
+            "header": API_VERSION_HEADER,
+            "major": "Feld, Endpunkt, Prüfung oder Kriterium entfällt oder wird umbenannt, oder ein Wert ändert seine Bedeutung",
+            "minor": "Neue Felder, Endpunkte, Prüfungen oder Kriterien",
+            "patch": "Eine Prüfung entscheidet genauer, ohne dass sich das Format ändert",
+            "changelog": "https://github.com/FWU-DE/vidis-checker-2/blob/main/CHANGELOG.md",
+        },
         "criteria_catalog": {"name": "VIDIS-Prüfkriterien", "version": "V0.2", "count": len(criteria_items)},
         "authentication": {
             "required": bool(_api_keys()) or not _auth_disabled(),
@@ -658,6 +673,7 @@ def create_job(request: JobCreateRequest, http_request: Request, caller: Caller 
         updated_at=_now(),
         request=request,
         owner=caller.key_id,
+        api_version=API_VERSION,
     )
     _job_dir(job_id).mkdir(parents=True, exist_ok=False)
     _write_metadata(metadata)

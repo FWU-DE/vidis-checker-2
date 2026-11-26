@@ -24,6 +24,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from .version import API_VERSION
+
 import httpx
 
 EVENT = "job.finished"
@@ -49,6 +51,7 @@ def build_payload(metadata: Any, base_url: str) -> dict[str, Any]:
     base = base_url.rstrip("/")
     return {
         "event": EVENT,
+        "api_version": API_VERSION,
         "job_id": job_id,
         "status": metadata.status,
         "error": metadata.error,

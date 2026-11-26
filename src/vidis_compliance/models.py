@@ -36,6 +36,8 @@ class JobConfig(BaseModel):
 
 class JobResult(BaseModel):
     job_id: str
+    # Contract version that produced this result; None for results from before 1.0.0.
+    api_version: Optional[str] = None
     findings: List[CheckFinding] = Field(default_factory=list)
 
 class CriteriaIndex(BaseModel):

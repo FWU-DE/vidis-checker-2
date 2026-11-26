@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import criteria_for_source
+from .version import API_VERSION
 from .report.data import load_criteria
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -120,6 +121,7 @@ def build_coverage_matrix() -> dict[str, Any]:
     return {
         "title": "VIDIS Coverage Matrix",
         "generated_at": generated_at,
+        "api_version": API_VERSION,
         "criteria_registry": "src/vidis_compliance/criteria/vidis_v0_2.yaml",
         "columns": COLUMNS,
         "rows": rows,

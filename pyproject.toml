@@ -1,6 +1,6 @@
 [project]
 name = "vidis-compliance"
-version = "0.1.0"
+version = "1.0.0"
 description = "Unified VIDIS compliance checker: code inspection + browser site evaluation"
 authors = [{ name = "FWU", email = "it@fwu.de" }]
 requires-python = ">=3.12"
