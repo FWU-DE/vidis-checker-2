@@ -563,13 +563,10 @@ def _run_checks(
         if selected is not None and k not in criteria_for_checks(selected):
             continue
         if k not in wired:
-            findings.append(
-                finding_details.placeholder(
-                    k,
-                    inputs={"site": bool(url), "documents": bool(url or document_inputs), "code": bool(code_path)},
-                    selected=selected,
-                )
-            )
+            inputs = {"site": bool(url), "documents": bool(url or document_inputs), "code": bool(code_path)}
+            if selected is not None and finding_details.left_to_other_check(k, inputs=inputs, selected=selected):
+                continue
+            findings.append(finding_details.placeholder(k, inputs=inputs, selected=selected))
     finding_details.tag_site(findings)
     finding_details.annotate(
         findings,

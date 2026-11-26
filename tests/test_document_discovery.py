@@ -120,7 +120,7 @@ def test_nothing_found_gives_manual_with_a_clear_note(client: TestClient) -> Non
 
     assert job["status"] == "completed", job.get("error")
     findings = {f["criterion"]: f for f in job["result"]["findings"]}
-    assert set(findings) == set(analyze.DOCUMENT_CRITERIA) | {"RDS-CUC-453"}
+    assert set(findings) == set(analyze.DOCUMENT_CRITERIA)
     for code in analyze.DOCUMENT_CRITERIA:
         assert findings[code]["status"] == "MANUELL"
         assert "Keine AGB, Datenschutzerklärung oder AVV auf anbieter.test gefunden" in findings[code]["note"]

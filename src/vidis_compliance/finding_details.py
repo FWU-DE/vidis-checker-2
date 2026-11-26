@@ -67,11 +67,22 @@ def tag_site(findings: list[CheckFinding]) -> None:
             finding.check = SITE_CHECK_FOR[finding.criterion]
 
 
+def _candidates(criterion: str):
+    return [check for check in CHECKS if criterion in check.criteria and check.source in {"site", "documents", "code"}]
+
+
+def left_to_other_check(criterion: str, *, inputs: dict[str, bool], selected: frozenset[str]) -> bool:
+    """True when a single-check run did not evaluate this criterion but another check could, with the same input.
+
+    Such runs leave the criterion out instead of answering MANUELL, so callers who merge single-check
+    results per criterion do not overwrite the real result (RDS-CUC-453 from documents.analysis alone).
+    """
+    return any(inputs.get(check.source) and check.id not in selected for check in _candidates(criterion))
+
+
 def placeholder(criterion: str, *, inputs: dict[str, bool], selected: frozenset[str] | None = None) -> CheckFinding:
     """MANUELL for a criterion no check of this run covered, saying why."""
-    candidates = [
-        check for check in CHECKS if criterion in check.criteria and check.source in {"site", "documents", "code"}
-    ]
+    candidates = _candidates(criterion)
     if not candidates:
         return CheckFinding(criterion=criterion, status="MANUELL", note=NOT_AUTOMATED_NOTE, reason="not_automated",
                             review_hint="Kriterium anhand der VIDIS-Prüfkriterien manuell bewerten.")

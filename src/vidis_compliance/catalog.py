@@ -388,7 +388,7 @@ REASONS = {
     "automated": "PASS oder FAIL wurde automatisch entschieden.",
     "needs_review": "Die Prüfung lief, der Befund ist nicht eindeutig: ein Mensch entscheidet anhand von evidence, review_hint und artifacts.",
     "not_automated": "Für das Kriterium gibt es keine automatische Prüfung; es ist immer manuell zu bewerten.",
-    "missing_input": "Eine Eingabe fehlte (etwa Dokument-URL oder Login), oder die zuständige Prüfung war nicht ausgewählt; die Notiz nennt was.",
+    "missing_input": "Eine Eingabe fehlte (etwa Dokument-URL oder Login); die Notiz nennt was.",
     "not_reachable": "Eine Seite oder ein Dokument war nicht abrufbar.",
 }
 
