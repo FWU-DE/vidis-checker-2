@@ -6,10 +6,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-import httpx
 from bs4 import BeautifulSoup
 
 from ...models import CheckFinding, Status
+from ...net import safe_get
+
+# Documents above this size are refused rather than read into memory.
+MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
 
 DOCUMENT_CRITERIA = (
     "RDS-DEV-380",
@@ -159,8 +162,8 @@ def fetch_document(document: DocumentInput | str | Path) -> tuple[bytes, str, st
     else:
         location = str(document)
         kind = "document"
-    if re.match(r"https?://", location):
-        response = httpx.get(location, timeout=20, follow_redirects=True)
+    if re.match(r"(?i)https?://", location):
+        response = safe_get(location, timeout=20, max_bytes=MAX_DOCUMENT_BYTES)
         response.raise_for_status()
         content_type = response.headers.get("content-type", "")
         return response.content, content_type, location, kind

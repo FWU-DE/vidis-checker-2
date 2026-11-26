@@ -6,9 +6,11 @@ from html.parser import HTMLParser
 from typing import Callable
 from urllib.parse import urldefrag, urljoin, urlparse
 
-import httpx
 
 from ...models import CheckFinding
+from ...net import safe_get
+
+MAX_PAGE_BYTES = 3 * 1024 * 1024
 
 UserAgent = "vidis-compliance/0.1 (+https://fwu.de)"
 DSO_383_SIGNAL = "Datenschutzbeauftragter-Kontakt, falls bestellt (Art. 13 Abs. 1 lit. b DSGVO)"
@@ -121,9 +123,8 @@ def discover_legal_links(base_url: str, html: str) -> dict[str, str]:
 
 
 def _default_fetch(url: str) -> FetchResult:
-    with httpx.Client(timeout=15, headers={"User-Agent": UserAgent}) as client:
-        response = client.get(url, follow_redirects=True)
-        return response.status_code, response.text
+    response = safe_get(url, timeout=15, max_bytes=MAX_PAGE_BYTES, headers={"User-Agent": UserAgent})
+    return response.status_code, response.text
 
 
 def _page_text(html: str) -> str:
