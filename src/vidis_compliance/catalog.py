@@ -367,21 +367,21 @@ OUTCOMES: dict[str, tuple[tuple[str, str, str], ...]] = {
 
 # Keys that can appear in finding.evidence, per check.
 EVIDENCE_KEYS: dict[str, tuple[str, ...]] = {
-    "site.cookies": ("pages", "cookies"),
-    "site.tracking_pixel": ("pages", "third_party_hosts", "requests"),
-    "site.browser_storage": ("pages", "local_storage_keys", "session_storage_keys"),
-    "site.device_storage": ("pages", "browser_signals"),
-    "site.fingerprinting": ("pages", "browser_signals"),
-    "site.tracking_mechanisms": ("pages", "third_party_hosts", "requests"),
+    "site.cookies": ("pages", "cookies", "local_storage", "session_storage", "counts", "consent_click", "truncated"),
+    "site.tracking_pixel": ("pages", "trackers", "third_party_hosts", "requests", "truncated"),
+    "site.browser_storage": ("pages", "local_storage_keys", "session_storage_keys", "local_storage", "session_storage", "counts", "truncated"),
+    "site.device_storage": ("pages", "browser_signals", "device_storage", "truncated"),
+    "site.fingerprinting": ("pages", "browser_signals", "fingerprinting_apis", "truncated"),
+    "site.tracking_mechanisms": ("pages", "trackers", "non_essential", "fingerprinting_apis", "pedagogical_purpose", "third_party_hosts", "requests", "truncated"),
     "site.cookie_descriptions": ("pages", "observed", "present", "missing"),
-    "site.advertising": ("pages", "vision_reviews"),
-    "site.outbound_ad_links": ("pages", "external_links", "vision_reviews"),
-    "site.youth_protection": ("pages", "vision_reviews"),
-    "site.transport": ("pages",),
+    "site.advertising": ("pages", "ad_signals", "vision_reviews", "truncated"),
+    "site.outbound_ad_links": ("pages", "ad_links", "external_links", "vision_reviews", "truncated"),
+    "site.youth_protection": ("pages", "youth_signals", "vision_reviews", "truncated"),
+    "site.transport": ("pages", "https", "http", "redirects_to_https", "host", "port", "obsolete_protocols"),
     "site.legal_pages": ("impressum_url", "privacy_url", "impressum_found", "impressum_missing", "impressum_manual", "privacy_found", "privacy_missing", "privacy_manual", "privacy_dpo_absent_declared", "visited_urls"),
-    "code.inspection": ("files_scanned",),
-    "documents.analysis": ("documents", "snippets", "discovery", "skipped"),
-    "agentic.persona_crawl": ("visited_urls",),
+    "code.inspection": ("files_scanned", "code_hits", "truncated"),
+    "documents.analysis": ("documents", "snippets", "discovery", "skipped", "truncated"),
+    "agentic.persona_crawl": ("visited_urls", "cookies", "local_storage", "session_storage", "counts", "non_essential", "observed", "present", "missing", "truncated"),
 }
 
 REASONS = {

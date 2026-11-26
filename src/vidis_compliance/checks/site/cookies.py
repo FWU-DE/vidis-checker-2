@@ -1,6 +1,8 @@
 from __future__ import annotations
 import re
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Tuple
+from urllib.parse import urlsplit
 
 from ...models import Status
 from .cookie_db import COOKIE_DATABASE_SOURCE_NAME, CookieDatabase, get_default_cookie_database
@@ -72,25 +74,133 @@ def _storage_key_allowed_by_prefix(key: str) -> bool:
     return any(lowered == prefix or lowered.startswith(prefix) for prefix in ALLOWED_STORAGE_PREFIXES)
 
 
-def _classify_name(name: str, database: CookieDatabase) -> tuple[str, str]:
-    """Return (bucket, detail) where bucket is essential/non_essential/unknown."""
+def classify_name(name: str, database: CookieDatabase | None = None) -> dict[str, str]:
+    """Classify one cookie name or storage key.
+
+    Returns ``classification`` (essential/non_essential/unknown), ``basis``
+    (cookie_database, tracker_prefix, allowlist, storage_heuristic or none) and,
+    for a database match, ``category``, ``platform`` and the matched ``pattern``.
+    """
+    database = database or get_default_cookie_database()
     db_result = database.is_cookie_essential(name)
     if db_result is not None:
-        is_essential, cookie_info = db_result
-        detail = f"{name} ({cookie_info.platform}, {cookie_info.category})"
-        return ("essential" if is_essential else "non_essential", detail)
-
-    fallback_hit = next(
-        (prefix for prefix in TRACKER_COOKIE_PREFIXES if name.lower().startswith(prefix.lower())),
-        None,
-    )
-    if fallback_hit is not None:
-        return "non_essential", f"{name} (Heuristik: Tracker-Präfix {fallback_hit})"
+        is_essential, info = db_result
+        return {
+            "classification": "essential" if is_essential else "non_essential",
+            "basis": "cookie_database",
+            "category": info.category,
+            "platform": info.platform,
+            "pattern": info.cookie,
+        }
+    lowered = name.lower()
+    prefix = next((p for p in TRACKER_COOKIE_PREFIXES if lowered.startswith(p.lower())), None)
+    if prefix is not None:
+        return {"classification": "non_essential", "basis": "tracker_prefix", "pattern": prefix}
     if _storage_key_allowed_by_prefix(name):
-        return "essential", f"{name} (Allowlist-Präfix)"
-    if any(needle in name.lower() for needle in STORAGE_TRACKER_KEYS):
-        return "non_essential", f"{name} (Heuristik: Tracking-/Analyse-Storage)"
-    return "unknown", name
+        return {"classification": "essential", "basis": "allowlist"}
+    needle = next((n for n in STORAGE_TRACKER_KEYS if n in lowered), None)
+    if needle is not None:
+        return {"classification": "non_essential", "basis": "storage_heuristic", "pattern": needle}
+    return {"classification": "unknown", "basis": "none"}
+
+
+def _classify_name(name: str, database: CookieDatabase) -> tuple[str, str]:
+    """Return (bucket, detail) where bucket is essential/non_essential/unknown."""
+    result = classify_name(name, database)
+    basis = result["basis"]
+    if basis == "cookie_database":
+        detail = f"{name} ({result['platform']}, {result['category']})"
+    elif basis == "tracker_prefix":
+        detail = f"{name} (Heuristik: Tracker-Präfix {result['pattern']})"
+    elif basis == "allowlist":
+        detail = f"{name} (Allowlist-Präfix)"
+    elif basis == "storage_heuristic":
+        detail = f"{name} (Heuristik: Tracking-/Analyse-Storage)"
+    else:
+        detail = name
+    return result["classification"], detail
+
+
+def _site_host(url: str) -> str:
+    host = (urlsplit(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _is_third_party(cookie_domain: str, site: str) -> bool | None:
+    domain = cookie_domain.lstrip(".").lower()
+    domain = domain[4:] if domain.startswith("www.") else domain
+    if not domain or not site:
+        return None
+    # Same registrable site, roughly: one is a subdomain of the other.
+    return not (domain == site or site.endswith("." + domain) or domain.endswith("." + site))
+
+
+def _expiry(cookie: Dict[str, Any]) -> dict[str, Any]:
+    expires = cookie.get("expires")
+    try:
+        value = float(expires)
+    except (TypeError, ValueError):
+        return {}
+    if value <= 0:
+        return {"session": True}
+    return {
+        "session": False,
+        "expires": datetime.fromtimestamp(value, tz=timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def cookie_inventory(data: Dict[str, Any], cookie_database: CookieDatabase | None = None) -> dict[str, Any]:
+    """Every observed cookie and storage key with its classification, never with values.
+
+    This is the machine-readable form of what ``classify_cookies`` and
+    ``classify_local_storage`` decide on.
+    """
+    database = cookie_database or get_default_cookie_database()
+    site = _site_host(str(data.get("url") or ""))
+    cookies: list[dict[str, Any]] = []
+    for cookie in data.get("cookies") or []:
+        if not isinstance(cookie, dict):
+            continue
+        name = str(cookie.get("name") or "").strip()
+        if not name:
+            continue
+        domain = str(cookie.get("domain") or "")
+        item: dict[str, Any] = {"name": name, "domain": domain, "path": cookie.get("path")}
+        item.update(classify_name(name, database))
+        item["third_party"] = _is_third_party(domain, site)
+        item.update(_expiry(cookie))
+        for source, target in (("secure", "secure"), ("httpOnly", "http_only"), ("sameSite", "same_site"),
+                               ("first_seen_url", "first_seen_url"), ("before_consent_click", "before_consent_click")):
+            if source in cookie:
+                item[target] = cookie[source]
+        cookies.append({key: value for key, value in item.items() if value is not None})
+    cookies.sort(key=lambda c: (c["name"].lower(), c.get("domain", "")))
+
+    def storage(values: Any) -> list[dict[str, Any]]:
+        if not isinstance(values, dict):
+            return []
+        keys = sorted({str(k).strip() for k in values.keys() if str(k).strip()}, key=str.lower)
+        return [{"key": key, **classify_name(key, database)} for key in keys]
+
+    local, session = storage(data.get("local_storage")), storage(data.get("session_storage"))
+    counts = {"essential": 0, "non_essential": 0, "unknown": 0}
+    for item in cookies + local + session:
+        counts[item["classification"]] += 1
+    return {"cookies": cookies, "local_storage": local, "session_storage": session, "counts": counts}
+
+
+def tracker_hits(data: Dict[str, Any]) -> list[dict[str, str]]:
+    """Script, request and resource URLs matching a known tracker, with the matched pattern."""
+    hits: dict[str, dict[str, str]] = {}
+    sources = [("script", v) for v in data.get("scripts") or []] + [("request", v) for v in data.get("requests") or []]
+    sources += [("resource", r.get("url")) for r in data.get("resources") or [] if isinstance(r, dict)]
+    for kind, value in sources:
+        url = str(value or "")
+        lowered = url.lower()
+        match = next((snippet for snippet in TRACKER_SCRIPT_SNIPPETS if snippet.lower() in lowered), None)
+        if match and url not in hits:
+            hits[url] = {"url": url, "host": (urlsplit(url).hostname or "").lower(), "kind": kind, "pattern": match}
+    return sorted(hits.values(), key=lambda h: h["url"])
 
 
 def _append_storage_classification(
@@ -285,15 +395,7 @@ def classify_tracking_pixel(data: Dict[str, Any], audience: str) -> Tuple[Status
     RDS-CUC-373:
     - If network requests or script src match known trackers → FAIL for SuS, MANUELL otherwise
     """
-    scripts: List[str] = data.get('scripts', [])
-    requests: List[str] = data.get('requests', [])
-    hits = []
-    for s in scripts:
-        if any(snippet in s for snippet in TRACKER_SCRIPT_SNIPPETS):
-            hits.append(s)
-    for u in requests:
-        if any(snippet in u for snippet in TRACKER_SCRIPT_SNIPPETS):
-            hits.append(u)
+    hits = [hit["url"] for hit in tracker_hits(data) if hit["kind"] in {"script", "request"}]
     if hits:
         uniq = sorted(set(hits))[:10]
         if _is_sus_audience(audience):
@@ -403,17 +505,10 @@ def _non_essential_inventory_for_377(data: Dict[str, Any]) -> list[str]:
 
 
 def _known_tracker_hits_for_377(data: Dict[str, Any]) -> list[str]:
-    hits: list[str] = []
-    values = [str(value) for value in (data.get('scripts') or [])] + [str(value) for value in (data.get('requests') or [])]
-    values += [str(resource.get('url') or '') for resource in (data.get('resources') or []) if isinstance(resource, dict)]
-    for value in values:
-        lowered = value.lower()
-        if any(snippet in lowered for snippet in TRACKER_SCRIPT_SNIPPETS):
-            hits.append(_short_signal(value))
-    return sorted(set(hits))
+    return sorted({_short_signal(hit["url"]) for hit in tracker_hits(data)})
 
 
-def _pedagogical_context_snippet_for_377(data: Dict[str, Any]) -> str:
+def pedagogical_purpose_snippet(data: Dict[str, Any]) -> str:
     candidates = [
         data.get("product_context"),
         data.get("tracking_purpose"),
@@ -435,7 +530,7 @@ def classify_tracking_mechanisms(data: Dict[str, Any], audience: str) -> Tuple[S
     tracker_hits = _known_tracker_hits_for_377(data)
     non_essential_hits = _non_essential_inventory_for_377(data)
     fingerprinting_hits = _signal_api_summaries_for_377(data, 'fingerprinting')
-    purpose = _pedagogical_context_snippet_for_377(data)
+    purpose = pedagogical_purpose_snippet(data)
     tracking_evidence = tracker_hits + non_essential_hits
 
     if tracking_evidence and purpose:

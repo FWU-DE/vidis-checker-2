@@ -477,21 +477,44 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
       <h3>Aufbau eines Befunds</h3>
       <p>Jeder Befund in <code>result.findings</code> (API: <code>GET /jobs/&lt;id&gt;</code>) hat dieselben Felder. Die drei Status bleiben PASS, FAIL und MANUELL; <code>reason</code> unterscheidet, welche Art manueller Arbeit ein MANUELL bedeutet.</p>
       <pre><code>{
-  "criterion": "RDS-CUC-374",
-  "status": "MANUELL",
-  "reason": "needs_review",
-  "check": "site.browser_storage",
-  "note": "Unbekannter Browser-Storage: acme.widgetState",
-  "evidence": {"pages": ["https://anbieter.example/"], "local_storage_keys": ["acme.widgetState"], "session_storage_keys": []},
-  "review_hint": "Zweck der Storage-Schlüssel klären: funktional oder Tracking/Profilbildung?",
+  "criterion": "RDS-CUC-371",
+  "status": "FAIL",
+  "reason": "automated",
+  "check": "site.cookies",
+  "note": "RDS-CUC-371/372 Open Cookie Database EDPB + Storage-Allowlist; Nicht essenzielle Cookies: _ga (Google Analytics, Analytics)",
+  "evidence": {
+    "pages": ["https://anbieter.example/"],
+    "cookies": [{
+      "name": "_ga", "domain": ".anbieter.example", "path": "/",
+      "classification": "non_essential", "basis": "cookie_database",
+      "category": "Analytics", "platform": "Google Analytics", "pattern": "_ga",
+      "third_party": false, "session": false, "expires": "2028-12-31T10:00:00+00:00",
+      "secure": false, "http_only": false, "same_site": "Lax",
+      "first_seen_url": "https://anbieter.example/", "before_consent_click": true
+    }],
+    "counts": {"essential": 0, "non_essential": 1, "unknown": 0}
+  },
+  "review_hint": null,
   "artifacts": ["/jobs/&lt;id&gt;/artifacts/capture.json"]
 }</code></pre>
       <ul>
         <li><code>check</code>: die Prüfung, die den Befund erzeugt hat; <code>null</code>, wenn keine Prüfung das Kriterium abdeckt.</li>
-        <li><code>evidence</code>: die Daten hinter dem Befund (Listen höchstens 50 Einträge, Texte höchstens 300 Zeichen). Welche Schlüssel vorkommen können, steht unten je Prüfung und in <code>/discovery</code> unter <code>checks[].evidence_keys</code>.</li>
+        <li><code>evidence</code>: die Daten hinter dem Befund, also was die Prüfung gefunden und wie sie es eingeordnet hat (Listen höchstens 50 Einträge, Texte höchstens 300 Zeichen; was gekürzt wurde, steht mit der vollen Anzahl in <code>truncated</code>). Welche Schlüssel vorkommen können, steht unten je Prüfung und in <code>/discovery</code> unter <code>checks[].evidence_keys</code> und <code>result_format.evidence_fields</code>.</li>
         <li><code>review_hint</code>: was bei MANUELL zu prüfen ist; bei PASS/FAIL leer.</li>
         <li><code>artifacts</code>: Download-Links zu den vollständigen Belegen (mit API-Schlüssel), etwa <code>capture.json</code>, <code>document_capture.json</code> oder öffentliche Screenshots.</li>
       </ul>
+      <h3>Was in <code>evidence</code> steht</h3>
+      <ul>
+        <li><strong>Cookies</strong> (<code>site.cookies</code>, angemeldeter Crawl): je Cookie <code>name</code>, <code>domain</code>, <code>path</code>, die Einordnung <code>classification</code> (<code>essential</code>, <code>non_essential</code>, <code>unknown</code>) und ihre Grundlage <code>basis</code>: <code>cookie_database</code> mit <code>category</code>, <code>platform</code> und <code>pattern</code> aus der Open Cookie Database, sonst <code>tracker_prefix</code>, <code>allowlist</code>, <code>storage_heuristic</code> oder <code>none</code>. Dazu <code>third_party</code>, <code>session</code> bzw. <code>expires</code>, <code>secure</code>, <code>http_only</code>, <code>same_site</code>, <code>first_seen_url</code> (Seite, auf der das Cookie zuerst auftauchte) und <code>before_consent_click</code>. <code>counts</code> zählt die Einordnungen über Cookies und Storage.</li>
+        <li><strong>Einwilligung</strong>: Der Crawl klickt ein erkanntes Cookie-Banner auf „Akzeptieren“. <code>consent_click</code> nennt Seite und Selektor dieses Klicks. <code>before_consent_click: true</code> heißt: Das Cookie war schon vorher gesetzt, oder es wurde nie ein Banner akzeptiert.</li>
+        <li><strong>Storage</strong> (<code>site.cookies</code>, <code>site.browser_storage</code>): <code>local_storage</code> und <code>session_storage</code> je Schlüssel mit <code>key</code>, <code>classification</code> und <code>basis</code> wie bei Cookies. <code>local_storage_keys</code> und <code>session_storage_keys</code> bleiben als einfache Listen.</li>
+        <li><strong>Tracking</strong>: <code>trackers</code> je Treffer mit <code>url</code>, <code>host</code>, <code>kind</code> (<code>script</code>, <code>request</code>, <code>resource</code>) und dem passenden <code>pattern</code>. <code>site.tracking_mechanisms</code> führt außerdem nicht notwendige Cookies und Storage-Schlüssel (<code>non_essential</code>), aufgerufene Fingerprinting-APIs mit Anzahl (<code>fingerprinting_apis</code>) und die Textstelle zum pädagogischen Zweck (<code>pedagogical_purpose</code>).</li>
+        <li><strong>Device Storage</strong>: <code>device_storage</code> je API-Zugriff mit <code>api</code>, <code>count</code>, <code>classification</code> (<code>technical</code>, <code>tracking</code>, <code>unresolved</code>) und dem erkannten Zweck <code>purpose</code>.</li>
+        <li><strong>Werbung und Jugendschutz</strong>: <code>ad_signals</code> (Werbenetzwerke, Anzeigen-Elemente, Sponsoring-Labels), <code>ad_links</code> (Link mit <code>reasons</code>, etwa Affiliate-Parameter) und <code>youth_signals</code> mit <code>severity</code> (<code>strong</code> führt zu FAIL, <code>manual</code> zu MANUELL).</li>
+        <li><strong>Transport</strong>: <code>https</code> und <code>http</code> mit Statuscode, Weiterleitungsziel oder Fehler, <code>redirects_to_https</code> und <code>obsolete_protocols</code> mit <code>true</code> für jede alte TLS-Version, die der Server annimmt.</li>
+        <li><strong>Quellcode</strong>: <code>code_hits</code> mit Datei, Zeile und Fundstelle für das jeweilige Kriterium.</li>
+      </ul>
+      <p>Cookie- und Storage-Werte stehen nie in <code>evidence</code>.</p>
       <table>
         <thead><tr><th><code>reason</code></th><th>Bedeutung</th></tr></thead>
         <tbody>
@@ -544,47 +567,47 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
       <table>
         <thead><tr><th>Prüfung</th><th>Status</th><th><code>reason</code></th><th>Wann</th><th><code>evidence</code></th></tr></thead>
         <tbody>
-          <tr><td rowspan="3"><code>site.cookies</code><br><small>RDS-CUC-371, RDS-CUC-372</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Alle Cookies und Storage-Einträge sind laut Open Cookie Database oder Allowlist technisch notwendig.</td><td rowspan="3" class="ev"><code>pages</code>, <code>cookies</code></td></tr>
+          <tr><td rowspan="3"><code>site.cookies</code><br><small>RDS-CUC-371, RDS-CUC-372</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Alle Cookies und Storage-Einträge sind laut Open Cookie Database oder Allowlist technisch notwendig.</td><td rowspan="3" class="ev"><code>pages</code>, <code>cookies</code>, <code>local_storage</code>, <code>session_storage</code>, <code>counts</code>, <code>consent_click</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Nicht notwendige Cookies bei Zielgruppe SuS oder beide.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Nicht notwendige Cookies bei Zielgruppe Lehrkräfte (Einwilligung?), unbekannte Cookies oder gar keine Cookies erkannt.</td></tr>
-          <tr><td rowspan="3"><code>site.tracking_pixel</code><br><small>RDS-CUC-373</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine bekannten Tracker in den Anfragen.</td><td rowspan="3" class="ev"><code>pages</code>, <code>third_party_hosts</code>, <code>requests</code></td></tr>
+          <tr><td rowspan="3"><code>site.tracking_pixel</code><br><small>RDS-CUC-373</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine bekannten Tracker in den Anfragen.</td><td rowspan="3" class="ev"><code>pages</code>, <code>trackers</code>, <code>third_party_hosts</code>, <code>requests</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Tracker erkannt bei Zielgruppe SuS oder beide.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Tracker erkannt bei Zielgruppe Lehrkräfte (Einwilligung?).</td></tr>
-          <tr><td rowspan="3"><code>site.browser_storage</code><br><small>RDS-CUC-374</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Kein Local/Session Storage, oder alle Schlüssel sind als notwendig bekannt.</td><td rowspan="3" class="ev"><code>pages</code>, <code>local_storage_keys</code>, <code>session_storage_keys</code></td></tr>
+          <tr><td rowspan="3"><code>site.browser_storage</code><br><small>RDS-CUC-374</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Kein Local/Session Storage, oder alle Schlüssel sind als notwendig bekannt.</td><td rowspan="3" class="ev"><code>pages</code>, <code>local_storage_keys</code>, <code>session_storage_keys</code>, <code>local_storage</code>, <code>session_storage</code>, <code>counts</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Nicht notwendige Schlüssel bei Zielgruppe SuS oder beide.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Unbekannte Schlüssel, oder nicht notwendige bei Zielgruppe Lehrkräfte.</td></tr>
-          <tr><td rowspan="3"><code>site.device_storage</code><br><small>RDS-CUC-375</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine oder nur technisch nötige Zugriffe auf IndexedDB, Cache Storage, Service Worker.</td><td rowspan="3" class="ev"><code>pages</code>, <code>browser_signals</code></td></tr>
+          <tr><td rowspan="3"><code>site.device_storage</code><br><small>RDS-CUC-375</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine oder nur technisch nötige Zugriffe auf IndexedDB, Cache Storage, Service Worker.</td><td rowspan="3" class="ev"><code>pages</code>, <code>browser_signals</code>, <code>device_storage</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Tracking-Zugriffe bei Zielgruppe SuS oder beide.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Zweck der Zugriffe nicht bestimmbar, oder Tracking bei Zielgruppe Lehrkräfte.</td></tr>
-          <tr><td rowspan="2"><code>site.fingerprinting</code><br><small>RDS-CUC-376</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Fingerprinting-APIs (Canvas, WebGL, AudioContext …) aufgerufen.</td><td rowspan="2" class="ev"><code>pages</code>, <code>browser_signals</code></td></tr>
+          <tr><td rowspan="2"><code>site.fingerprinting</code><br><small>RDS-CUC-376</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Fingerprinting-APIs (Canvas, WebGL, AudioContext …) aufgerufen.</td><td rowspan="2" class="ev"><code>pages</code>, <code>browser_signals</code>, <code>fingerprinting_apis</code>, <code>truncated</code></td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Solche APIs wurden aufgerufen; ob zum Fingerprinting, muss ein Mensch beurteilen.</td></tr>
-          <tr><td rowspan="3"><code>site.tracking_mechanisms</code><br><small>RDS-CUC-377</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Trackingmechanismen, oder die Produktdokumente nennen einen pädagogischen Zweck.</td><td rowspan="3" class="ev"><code>pages</code>, <code>third_party_hosts</code>, <code>requests</code></td></tr>
+          <tr><td rowspan="3"><code>site.tracking_mechanisms</code><br><small>RDS-CUC-377</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Trackingmechanismen, oder die Produktdokumente nennen einen pädagogischen Zweck.</td><td rowspan="3" class="ev"><code>pages</code>, <code>trackers</code>, <code>non_essential</code>, <code>fingerprinting_apis</code>, <code>pedagogical_purpose</code>, <code>third_party_hosts</code>, <code>requests</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Tracking ohne belegten pädagogischen Zweck bei Zielgruppe SuS oder beide.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Tracking bei Zielgruppe Lehrkräfte oder Zweck unklar.</td></tr>
           <tr><td rowspan="4"><code>site.cookie_descriptions</code><br><small>RDS-CUC-453</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Jedes gefundene Cookie und jeder Storage-Schlüssel steht in der Datenschutzerklärung.</td><td rowspan="4" class="ev"><code>pages</code>, <code>observed</code>, <code>present</code>, <code>missing</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Mindestens eines fehlt in der Datenschutzerklärung (in evidence.missing).</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Keine Cookies oder Storage-Einträge gefunden, also nichts abzugleichen.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>missing_input</code></td><td>Keine Datenschutzerklärung gefunden oder mitgegeben (privacy_url).</td></tr>
-          <tr><td rowspan="2"><code>site.advertising</code><br><small>RDS-WER-384</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Werbenetzwerke, Anzeigen-Widgets oder Sponsoring-Hinweise.</td><td rowspan="2" class="ev"><code>pages</code>, <code>vision_reviews</code></td></tr>
+          <tr><td rowspan="2"><code>site.advertising</code><br><small>RDS-WER-384</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Werbenetzwerke, Anzeigen-Widgets oder Sponsoring-Hinweise.</td><td rowspan="2" class="ev"><code>pages</code>, <code>ad_signals</code>, <code>vision_reviews</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Werbesignale erkannt.</td></tr>
-          <tr><td rowspan="2"><code>site.outbound_ad_links</code><br><small>RDS-WER-385</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Affiliate- oder Werbelinks erkannt.</td><td rowspan="2" class="ev"><code>pages</code>, <code>external_links</code>, <code>vision_reviews</code></td></tr>
+          <tr><td rowspan="2"><code>site.outbound_ad_links</code><br><small>RDS-WER-385</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine Affiliate- oder Werbelinks erkannt.</td><td rowspan="2" class="ev"><code>pages</code>, <code>ad_links</code>, <code>external_links</code>, <code>vision_reviews</code>, <code>truncated</code></td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Mögliche Werbelinks; Ziel prüfen.</td></tr>
-          <tr><td rowspan="3"><code>site.youth_protection</code><br><small>RDS-VIN-354</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine 18+-, Glücksspiel-, Gewalt- oder riskanten Embed-Signale.</td><td rowspan="3" class="ev"><code>pages</code>, <code>vision_reviews</code></td></tr>
+          <tr><td rowspan="3"><code>site.youth_protection</code><br><small>RDS-VIN-354</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine 18+-, Glücksspiel-, Gewalt- oder riskanten Embed-Signale.</td><td rowspan="3" class="ev"><code>pages</code>, <code>youth_signals</code>, <code>vision_reviews</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Risikosignale erkannt.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Eingebettete Inhalte, die ein Mensch ansehen muss.</td></tr>
-          <tr><td rowspan="3"><code>site.transport</code><br><small>ITS-ENC-359, ITS-ENC-360, ITS-ENC-361</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>HTTPS erreichbar, HTTP leitet um oder ist zu, alte TLS-Versionen abgelehnt.</td><td rowspan="3" class="ev"><code>pages</code></td></tr>
+          <tr><td rowspan="3"><code>site.transport</code><br><small>ITS-ENC-359, ITS-ENC-360, ITS-ENC-361</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>HTTPS erreichbar, HTTP leitet um oder ist zu, alte TLS-Versionen abgelehnt.</td><td rowspan="3" class="ev"><code>pages</code>, <code>https</code>, <code>http</code>, <code>redirects_to_https</code>, <code>host</code>, <code>port</code>, <code>obsolete_protocols</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>HTTP liefert Inhalte ohne Umleitung, HTTPS fehlt oder alte TLS-Versionen werden angenommen.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>TLS-Versionen ließen sich nicht prüfen (ITS-ENC-361).</td></tr>
           <tr><td rowspan="2"><code>site.legal_pages</code><br><small>RDS-IPF-364, RDS-IPF-365, RDS-IPF-366, RDS-IPF-367</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Impressum/Datenschutzerklärung gefunden, erreichbar und mit den Pflichtangaben.</td><td rowspan="2" class="ev"><code>impressum_url</code>, <code>privacy_url</code>, <code>impressum_found</code>, <code>impressum_missing</code>, <code>impressum_manual</code>, <code>privacy_found</code>, <code>privacy_missing</code>, <code>privacy_manual</code>, <code>privacy_dpo_absent_declared</code>, <code>visited_urls</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Nicht gefunden, nicht erreichbar oder Pflichtangaben fehlen (in evidence.*_missing).</td></tr>
-          <tr><td rowspan="3"><code>code.inspection</code><br><small>RDS-CDN-379, RDS-CUC-371, RDS-CUC-372, RDS-CUC-373, RDS-CUC-374, RDS-CUC-375, RDS-CUC-376, RDS-CUC-377, RDS-DEV-380, RDS-IPF-364, RDS-IPF-365</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine einschlägigen Signale im Quellcode.</td><td rowspan="3" class="ev"><code>files_scanned</code></td></tr>
+          <tr><td rowspan="3"><code>code.inspection</code><br><small>RDS-CDN-379, RDS-CUC-371, RDS-CUC-372, RDS-CUC-373, RDS-CUC-374, RDS-CUC-375, RDS-CUC-376, RDS-CUC-377, RDS-DEV-380, RDS-IPF-364, RDS-IPF-365</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Keine einschlägigen Signale im Quellcode.</td><td rowspan="3" class="ev"><code>files_scanned</code>, <code>code_hits</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Einschlägige Signale gefunden, oder der Code-Pfad existiert nicht.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Signale gefunden, deren Zweck ein Mensch beurteilen muss.</td></tr>
-          <tr><td rowspan="4"><code>documents.analysis</code><br><small>RDS-DEV-380, RDS-DEV-381, RDS-DEV-466, RDS-DSO-383, RDS-AGB-368, RDS-AGB-369, RDS-SPE-370, RDS-CUC-377, RDS-CUC-453</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Ausdrückliche Regelung im Dokument gefunden (Textstellen in evidence.snippets).</td><td rowspan="4" class="ev"><code>documents</code>, <code>snippets</code>, <code>discovery</code>, <code>skipped</code></td></tr>
+          <tr><td rowspan="4"><code>documents.analysis</code><br><small>RDS-DEV-380, RDS-DEV-381, RDS-DEV-466, RDS-DSO-383, RDS-AGB-368, RDS-AGB-369, RDS-SPE-370, RDS-CUC-377, RDS-CUC-453</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Ausdrückliche Regelung im Dokument gefunden (Textstellen in evidence.snippets).</td><td rowspan="4" class="ev"><code>documents</code>, <code>snippets</code>, <code>discovery</code>, <code>skipped</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Das Dokument widerspricht dem Kriterium.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Dokument gelesen, aber keine ausdrückliche Regelung gefunden.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>missing_input</code></td><td>Keine AGB, Datenschutzerklärung oder AVV gefunden; URL mitgeben.</td></tr>
-          <tr><td rowspan="3"><code>agentic.persona_crawl</code><br><small>RDS-CUC-371, RDS-CUC-372, RDS-CUC-373, RDS-CUC-374, RDS-CUC-375, RDS-CUC-376, RDS-CUC-377, RDS-CUC-453, RDS-WER-384, RDS-WER-385, RDS-VIN-354, RDS-IPF-364, RDS-IPF-365, RDS-IPF-366, RDS-IPF-367, RDS-DSO-383</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Belege aus dem angemeldeten Bereich bestätigen das Kriterium.</td><td rowspan="3" class="ev"><code>visited_urls</code></td></tr>
+          <tr><td rowspan="3"><code>agentic.persona_crawl</code><br><small>RDS-CUC-371, RDS-CUC-372, RDS-CUC-373, RDS-CUC-374, RDS-CUC-375, RDS-CUC-376, RDS-CUC-377, RDS-CUC-453, RDS-WER-384, RDS-WER-385, RDS-VIN-354, RDS-IPF-364, RDS-IPF-365, RDS-IPF-366, RDS-IPF-367, RDS-DSO-383</small></td><td><strong>PASS</strong></td><td><code>automated</code></td><td>Belege aus dem angemeldeten Bereich bestätigen das Kriterium.</td><td rowspan="3" class="ev"><code>visited_urls</code>, <code>cookies</code>, <code>local_storage</code>, <code>session_storage</code>, <code>counts</code>, <code>non_essential</code>, <code>observed</code>, <code>present</code>, <code>missing</code>, <code>truncated</code></td></tr>
           <tr><td><strong>FAIL</strong></td><td><code>automated</code></td><td>Belege aus dem angemeldeten Bereich widersprechen ihm.</td></tr>
           <tr><td><strong>MANUELL</strong></td><td><code>needs_review</code></td><td>Belege gesammelt, ein Mensch muss sie beurteilen.</td></tr>
         </tbody>

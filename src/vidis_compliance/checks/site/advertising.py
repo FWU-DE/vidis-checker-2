@@ -98,36 +98,41 @@ def _text_hits(lines: list[str], pattern: re.Pattern[str], limit: int = 5) -> li
     return hits
 
 
+def advertising_hits(data: dict[str, Any]) -> list[dict[str, str]]:
+    """RDS-WER-384 signals: ad network URLs, ad resources on the page, sponsoring labels in the text."""
+    hits: list[dict[str, str]] = []
+    for kind, values in (("script", _strings(data, "scripts")), ("request", _strings(data, "requests"))):
+        hits.extend({"type": "ad_network", "kind": kind, "url": url} for url in values if _url_matches_ad(url))
+    for resource in data.get("resources") or []:
+        if isinstance(resource, dict) and _url_matches_ad(str(resource.get("url") or "")):
+            hits.append({"type": "ad_resource", "kind": str(resource.get("type") or "resource"),
+                         "url": str(resource.get("url") or ""), "selector": str(resource.get("selector") or "")})
+    hits.extend({"type": "sponsored_label", "text": hit} for hit in _text_hits(_strings(data, "visible_text"), SPONSORED_LABEL_RE))
+    return [{k: v for k, v in hit.items() if v} for hit in hits]
+
+
+def _advertising_label(hit: dict[str, str]) -> str:
+    if hit["type"] == "ad_network":
+        return f"Netzwerk/Script {hit['url']}"
+    if hit["type"] == "ad_resource":
+        return _resource_label({"type": hit.get("kind"), "url": hit.get("url"), "selector": hit.get("selector")})
+    return f"Textlabel '{hit['text']}'"
+
+
 def classify_advertising(data: dict[str, Any], audience: str) -> tuple[str, str]:
     """RDS-WER-384: detect strong advertising evidence on the site itself."""
     del audience
-    hits: list[str] = []
-    for url in _strings(data, "scripts") + _strings(data, "requests"):
-        if _url_matches_ad(url):
-            hits.append(f"Netzwerk/Script {url}")
-
-    for resource in data.get("resources") or []:
-        if not isinstance(resource, dict):
-            continue
-        url = str(resource.get("url") or "")
-        if _url_matches_ad(url):
-            hits.append(_resource_label(resource))
-
-    label_hits = _text_hits(_strings(data, "visible_text"), SPONSORED_LABEL_RE)
-    hits.extend(f"Textlabel '{hit}'" for hit in label_hits)
-
+    hits = [_advertising_label(hit) for hit in advertising_hits(data)]
     if hits:
         evidence = "; ".join(dict.fromkeys(hits))
         return "FAIL", f"RDS-WER-384 Werbesignale erkannt: {evidence}"
     return "PASS", "RDS-WER-384: Keine offensichtlichen Werbenetzwerke, Anzeigen-Widgets oder Sponsoring-Labels erkannt"
 
 
-def _link_evidence(link: dict[str, Any]) -> tuple[bool, str]:
+def _link_reasons(link: dict[str, Any]) -> list[str]:
     url = str(link.get("url") or "")
     text = str(link.get("text") or "")
-    selector = str(link.get("selector") or "")
-    parsed = urlparse(url)
-    query_keys = {key.lower() for key, _value in parse_qsl(parsed.query, keep_blank_values=True)}
+    query_keys = {key.lower() for key, _value in parse_qsl(urlparse(url).query, keep_blank_values=True)}
     reasons: list[str] = []
     if _url_matches_ad(url):
         reasons.append("Werbe-/Ad-Domain")
@@ -136,11 +141,34 @@ def _link_evidence(link: dict[str, Any]) -> tuple[bool, str]:
         reasons.append("Affiliate/UTM-Parameter " + ",".join(affiliate_keys))
     if SPONSORED_LABEL_RE.search(text):
         reasons.append("Sponsoring-Linktext")
+    return reasons
+
+
+def _link_evidence(link: dict[str, Any]) -> tuple[bool, str]:
+    reasons = _link_reasons(link)
     if not reasons:
         return False, ""
+    url = str(link.get("url") or "")
+    text = str(link.get("text") or "")
+    selector = str(link.get("selector") or "")
     selector_part = f" {selector}" if selector else ""
     text_part = f" '{' '.join(text.split())[:100]}'" if text else ""
     return True, f"{_domain(url)}{selector_part}{text_part} ({'; '.join(reasons)}; {url})"
+
+
+def outbound_ad_link_hits(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """RDS-WER-385 signals: links that look like ads or affiliate links, with the reasons."""
+    hits: dict[str, dict[str, Any]] = {}
+    for link in data.get("links") or []:
+        if not isinstance(link, dict):
+            continue
+        reasons = _link_reasons(link)
+        url = str(link.get("url") or "")
+        if reasons and url not in hits:
+            text = " ".join(str(link.get("text") or "").split())[:100]
+            hit = {"url": url, "domain": _domain(url), "text": text, "selector": str(link.get("selector") or ""), "reasons": reasons}
+            hits[url] = {k: v for k, v in hit.items() if v}
+    return list(hits.values())
 
 
 def classify_outbound_ad_links(data: dict[str, Any], audience: str) -> tuple[str, str]:
@@ -159,20 +187,15 @@ def classify_outbound_ad_links(data: dict[str, Any], audience: str) -> tuple[str
     return "PASS", "RDS-WER-385: Keine offensichtlichen ausgehenden Werbe-/Affiliate-Links erkannt"
 
 
-def classify_youth_protection(data: dict[str, Any], audience: str) -> tuple[str, str]:
-    """RDS-VIN-354: conservative youth-protection risk signals."""
-    del audience
-    strong_hits: list[str] = []
-    manual_hits: list[str] = []
-
+def youth_protection_hits(data: dict[str, Any]) -> list[dict[str, str]]:
+    """RDS-VIN-354 signals; ``severity`` strong leads to FAIL, manual to MANUELL."""
+    hits: list[dict[str, str]] = []
     url = str(data.get("url") or "")
     if YOUTH_RISK_RE.search(url):
-        strong_hits.append(f"URL/Domain {_domain(url)}")
-
+        hits.append({"type": "risk_domain", "severity": "strong", "value": _domain(url)})
     text_lines = _strings(data, "visible_text")
-    strong_hits.extend(f"Alters-/18+-Hinweis '{hit}'" for hit in _text_hits(text_lines, AGE_GATE_RE))
-    strong_hits.extend(f"Risikobegriff '{hit}'" for hit in _text_hits(text_lines, YOUTH_RISK_RE))
-
+    hits.extend({"type": "age_gate", "severity": "strong", "value": hit} for hit in _text_hits(text_lines, AGE_GATE_RE))
+    hits.extend({"type": "risk_term", "severity": "strong", "value": hit} for hit in _text_hits(text_lines, YOUTH_RISK_RE))
     for resource in data.get("resources") or []:
         if not isinstance(resource, dict):
             continue
@@ -180,10 +203,27 @@ def classify_youth_protection(data: dict[str, Any], audience: str) -> tuple[str,
         resource_url = str(resource.get("url") or "")
         lowered = resource_url.lower()
         if resource_type in {"iframe", "embed", "object"} and any(domain in lowered for domain in UNSAFE_EMBED_DOMAINS):
-            manual_hits.append("Eingebetteter Drittinhalt " + _resource_label(resource))
+            hits.append({"type": "embed", "severity": "manual", "value": _resource_label(resource), "url": resource_url})
         if YOUTH_RISK_RE.search(resource_url):
-            strong_hits.append("Risikodomain/-URL " + _resource_label(resource))
+            hits.append({"type": "risk_url", "severity": "strong", "value": _resource_label(resource), "url": resource_url})
+    return hits
 
+
+_YOUTH_LABELS = {
+    "risk_domain": "URL/Domain {}",
+    "age_gate": "Alters-/18+-Hinweis '{}'",
+    "risk_term": "Risikobegriff '{}'",
+    "embed": "Eingebetteter Drittinhalt {}",
+    "risk_url": "Risikodomain/-URL {}",
+}
+
+
+def classify_youth_protection(data: dict[str, Any], audience: str) -> tuple[str, str]:
+    """RDS-VIN-354: conservative youth-protection risk signals."""
+    del audience
+    hits = youth_protection_hits(data)
+    strong_hits = [_YOUTH_LABELS[h["type"]].format(h["value"]) for h in hits if h["severity"] == "strong"]
+    manual_hits = [_YOUTH_LABELS[h["type"]].format(h["value"]) for h in hits if h["severity"] == "manual"]
     if strong_hits:
         evidence = "; ".join(dict.fromkeys(strong_hits + manual_hits))
         return "FAIL", f"RDS-VIN-354 Jugendschutz-Risikosignale erkannt: {evidence}"
