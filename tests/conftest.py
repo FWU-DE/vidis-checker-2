@@ -18,5 +18,8 @@ def _open_api_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
         "VIDIS_CRAWL_CACHE_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
+    from vidis_compliance.util import llm
+
+    llm._PROBE.clear()
     monkeypatch.setenv("VIDIS_AUTH_DISABLED", "1")
     monkeypatch.setenv("VIDIS_ALLOW_PRIVATE_TARGETS", "1")

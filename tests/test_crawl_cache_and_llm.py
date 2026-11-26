@@ -219,3 +219,67 @@ def test_checks_without_visual_criteria_do_not_call_the_model(client: TestClient
     monkeypatch.setattr(llm, "generate_json", lambda *a, **k: pytest.fail("model must not be called"))
 
     _run(client, {"target_url": "https://app.example.test", "checks": ["site.fingerprinting"]})
+
+
+def _fake_vertex(monkeypatch, missing: set[str] | None = None) -> list[str]:
+    monkeypatch.setenv("GOOGLE_SA_JSON", FAKE_SA)
+    calls: list[str] = []
+
+    def fake_post(config, model, payload):
+        calls.append(model)
+        return httpx.Response(404 if model in (missing or set()) else 200, json={})
+
+    monkeypatch.setattr(llm, "_post", fake_post)
+    return calls
+
+
+def test_status_without_llm(client: TestClient) -> None:
+    payload = client.get("/status").json()
+
+    assert payload["status"] == "ok"
+    assert payload["llm"] == {"configured": False, "disabled": False}
+    assert payload["jobs"]["queued"] == 0
+    assert payload["crawl_cache"]["entries"] == 0
+
+
+def test_status_lists_available_models_and_caches_the_check(client: TestClient, monkeypatch) -> None:
+    calls = _fake_vertex(monkeypatch)
+
+    first = client.get("/status").json()
+    second = client.get("/status").json()
+
+    models = first["llm"]["availability"]["models"]
+    assert set(models) == set(llm.DEFAULT_MODELS.values())
+    assert all(entry["available"] for entry in models.values())
+    assert models[llm.DEFAULT_MODELS["strong"]]["tiers"] == ["strong"]
+    assert sorted(calls) == sorted(llm.DEFAULT_MODELS.values())
+    assert second["llm"]["availability"] == first["llm"]["availability"]
+    assert len(calls) == 2
+    assert "_checked" not in json.dumps(first)
+    assert "x@demo" not in json.dumps(first)
+
+    client.get("/status?refresh=true")
+    assert len(calls) == 2  # forced refresh is rate-limited
+    llm._PROBE["_checked"] -= llm.PROBE_MIN_INTERVAL_SECONDS + 1
+    client.get("/status?refresh=true")
+    assert len(calls) == 4
+
+
+def test_health_shows_last_check_but_never_calls_the_model(client: TestClient, monkeypatch) -> None:
+    calls = _fake_vertex(monkeypatch)
+
+    assert "availability" not in client.get("/health").json()["llm"]
+    assert calls == []
+    client.get("/status")
+    health = client.get("/health").json()["llm"]
+    assert health["availability"]["models"][llm.DEFAULT_MODELS["fast"]]["available"] is True
+    assert len(calls) == 2
+
+
+def test_status_is_degraded_when_no_model_answers(client: TestClient, monkeypatch) -> None:
+    _fake_vertex(monkeypatch, missing=set(llm.DEFAULT_MODELS.values()))
+
+    payload = client.get("/status").json()
+
+    assert payload["status"] == "degraded"
+    assert payload["llm"]["availability"]["models"][llm.DEFAULT_MODELS["fast"]]["http_status"] == 404

@@ -353,7 +353,7 @@ uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
       <p>Ohne <code>VIDIS_API_KEYS</code> startet <code>vidis serve</code> nur auf <code>127.0.0.1</code> und ist dort ohne Anmeldung offen. Auf jeder anderen Adresse verweigert der Server den Start. Läuft die API ohne Schlüssel und ohne <code>VIDIS_AUTH_DISABLED=1</code>, antworten alle Job-Endpunkte mit <code>503</code>.</p>
       <h3>Anmeldung</h3>
       <p>Alle Endpunkte unter <code>/jobs</code> und <code>POST /checks/&lt;id&gt;</code> brauchen einen der Schlüssel aus <code>VIDIS_API_KEYS</code> (kommagetrennt, jeder Schlüssel hat vollen Zugriff), als <code>Authorization: Bearer &lt;key&gt;</code> oder <code>X-API-Key: &lt;key&gt;</code>. Ohne gültigen Schlüssel kommt <code>401</code>. <code>VIDIS_API_KEY</code> mit einem einzelnen Schlüssel funktioniert weiterhin.</p>
-      <p>Ohne Schlüssel erreichbar: <code>/health</code>, <code>/discovery</code>, <code>/.well-known/vidis-checks</code>, <code>/criteria</code>, <code>GET /checks</code>, <code>/docs</code> und <code>/openapi.json</code>.</p>
+      <p>Ohne Schlüssel erreichbar: <code>/health</code>, <code>/status</code>, <code>/discovery</code>, <code>/.well-known/vidis-checks</code>, <code>/criteria</code>, <code>GET /checks</code>, <code>/docs</code> und <code>/openapi.json</code>.</p>
       <h3>Discovery: welche Prüfungen gibt es?</h3>
       <pre><code>curl https://vidis-checker.example/discovery</code></pre>
       <p>Die Antwort listet unter <code>checks</code> jede Prüfung mit <code>id</code>, den abgedeckten Kriterien, den nötigen Eingaben (<code>requires</code>) und ob sie automatisch oder nur auf Wunsch läuft (<code>enabled_by</code>, z. B. <code>agentic</code> oder <code>lighthouse</code>). Unter <code>criteria</code> steht für jedes VIDIS-Kriterium, welche Prüfungen es abdecken. Dazu kommen Anmeldeverfahren, Endpunkte und ein Beispiel-Request. <code>/.well-known/vidis-checks</code> liefert dasselbe. Unter <code>run</code> steht bei jeder Prüfung der Endpunkt, der sie einzeln startet.</p>
@@ -394,6 +394,9 @@ uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
         <li><code>VIDIS_LLM_DISABLED=1</code> schaltet die KI ab.</li>
       </ul>
       <p><code>GET /health</code> und <code>GET /discovery</code> zeigen unter <code>llm</code>, ob ein Modell eingerichtet ist und welches für welche Aufgabe gilt, ohne Zugangsdaten.</p>
+      <h3>Dienststatus</h3>
+      <pre><code>curl https://vidis-checker.example/status</code></pre>
+      <p><code>GET /status</code> (ohne Schlüssel) prüft mit einer kleinen Anfrage, welche der eingerichteten Modelle antworten, und zeigt je Modell <code>available</code>, HTTP-Status, Antwortzeit und Stufe (<code>fast</code>/<code>strong</code>). Das Ergebnis gilt zehn Minuten; <code>?refresh=true</code> prüft neu, höchstens einmal pro Minute. Dazu kommen die Zahl der Jobs je Status, die Zahl paralleler Prüfungen und die Einträge im Crawl-Cache. Antwortet kein Modell, steht <code>status</code> auf <code>degraded</code>. <code>/health</code> bleibt eine billige Lebenszeichen-Abfrage und zeigt nur die letzte Modellprüfung, ohne selbst eine zu starten.</p>
       <h3>Job abfragen, Jobs auflisten, Bericht erzeugen</h3>
       <pre><code>curl -H "X-API-Key: $VIDIS_KEY" 'https://vidis-checker.example/jobs?status=completed&amp;limit=100&amp;offset=0'
 
