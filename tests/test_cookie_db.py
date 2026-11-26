@@ -218,7 +218,7 @@ def test_classify_local_storage_passes_when_no_browser_storage_is_present() -> N
 
 def test_classify_local_storage_keeps_unknown_keys_manual_and_tracker_keys_fail() -> None:
     unknown_status, unknown_note = classify_local_storage(
-        {"local_storage": {"wpEmojiSettingsSupports": "secret"}, "session_storage": {}},
+        {"local_storage": {"acme.widgetState": "secret"}, "session_storage": {}},
         "SuS",
     )
     tracker_status, tracker_note = classify_local_storage(

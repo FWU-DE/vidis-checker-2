@@ -114,7 +114,8 @@ def safe_get(
     Raises ``UnsafeTargetError`` for a non-public hop, ``ResponseTooLargeError``
     past ``max_bytes`` and ``httpx.HTTPError`` for transport errors.
     """
-    request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+    # Uncompressed: some servers label bodies gzip that are not, which made whole sites unreadable.
+    request_headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity", **(headers or {})}
     current = url
     with httpx.Client(timeout=timeout, follow_redirects=False, headers=request_headers) as client:
         for _hop in range(max_redirects + 1):

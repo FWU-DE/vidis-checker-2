@@ -23,3 +23,15 @@ def _open_api_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     llm._PROBE.clear()
     monkeypatch.setenv("VIDIS_AUTH_DISABLED", "1")
     monkeypatch.setenv("VIDIS_ALLOW_PRIVATE_TARGETS", "1")
+
+
+@pytest.fixture(autouse=True)
+def _no_document_discovery_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Document discovery would fetch the target site; tests that need it patch it."""
+    from vidis_compliance import cli
+
+    monkeypatch.setattr(
+        cli,
+        "discover_document_links",
+        lambda url, wanted=(), **kwargs: {"found": {}, "missing": list(wanted), "searched": [url], "errors": []},
+    )

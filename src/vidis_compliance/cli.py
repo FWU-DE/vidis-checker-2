@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 import os
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any
 import typer
@@ -21,7 +22,7 @@ from .checks.site.cookies import (
     classify_tracking_pixel,
 )
 from .checks.site.basic_http import check_site_transport
-from .checks.site.ipf import analyze_ipf_site, findings_from_ipf_analysis
+from .checks.site.ipf import DOCUMENT_KINDS, analyze_ipf_site, discover_document_links, findings_from_ipf_analysis
 from .sources.site.crawl import crawl
 from .sources.site.vision import gemini_screenshot_provider, review_screenshots
 from .sources.site import crawl_cache
@@ -35,7 +36,7 @@ from .sources.agentic import (
     write_agentic_artifacts,
 )
 from .sources.code.inspect import inspect_code_path
-from .sources.documents.analyze import analyze_documents, build_document_inputs, extract_text, fetch_document
+from .sources.documents.analyze import DOCUMENT_CRITERIA, DocumentInput, analyze_documents, build_document_inputs, extract_text, fetch_document
 from .evidence import run_lighthouse, write_webinspector_exports
 from .coverage_matrix import write_coverage_matrix
 from .catalog import CRAWL_FREE_SITE_CHECKS, criteria_for_checks, resolve_check_selection
@@ -324,6 +325,16 @@ def run_checks(
     document_capture = None
     agent_capture = None
     document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
+    document_discovery = None
+    if url and want("documents.analysis"):
+        # Callers test along the criteria with just the site; find what they did not supply.
+        supplied = {document.kind for document in document_inputs}
+        wanted = tuple(kind for kind in DOCUMENT_KINDS if kind not in supplied)
+        if wanted:
+            document_discovery = discover_document_links(url, wanted=wanted)
+            document_inputs += [
+                DocumentInput(location=link, kind=kind, discovered=True) for kind, link in document_discovery["found"].items()
+            ]
     privacy_text_for_cookies = _extract_privacy_text_for_cookie_descriptions(document_inputs) if document_inputs else ""
     # Browser capture for cookie/storage-related VIDIS criteria.
     if url and needs_crawl:
@@ -432,8 +443,21 @@ def run_checks(
         for finding in code_findings:
             by_criterion[finding.criterion] = finding
         findings = list(by_criterion.values())
+    if want("documents.analysis") and document_discovery is not None and not document_inputs:
+        host = urlparse(url).hostname if url else ""
+        note = (
+            f"Keine AGB, Datenschutzerklärung oder AVV auf {host} gefunden (Startseite und Rechtsseiten durchsucht); "
+            "Dokument-URL mitgeben (agb_url, privacy_url, avv_url) oder manuell prüfen."
+        )
+        by_criterion = {finding.criterion: finding for finding in findings}
+        for code in DOCUMENT_CRITERIA:
+            by_criterion.setdefault(code, CheckFinding(criterion=code, status="MANUELL", note=note))
+        findings = list(by_criterion.values())
+        document_capture = {"discovery": document_discovery, "documents": [], "skipped": []}
     if document_inputs and want("documents.analysis"):
         document_findings, document_capture = analyze_documents(document_inputs)
+        if document_discovery is not None:
+            document_capture["discovery"] = document_discovery
         by_criterion = {finding.criterion: finding for finding in findings}
         for finding in document_findings:
             by_criterion[finding.criterion] = finding
