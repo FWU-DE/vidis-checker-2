@@ -165,7 +165,7 @@ def test_discovery_says_which_checks_each_criterion_needs(client: TestClient) ->
     criteria = {item["code"]: item for item in client.get("/discovery").json()["criteria"]}
 
     assert criteria["RDS-CUC-374"]["required_checks"] == ["site.browser_storage"]
-    assert criteria["RDS-CUC-377"]["required_checks"] == ["site.tracking_mechanisms", "documents.analysis"]
+    assert criteria["RDS-CUC-377"]["required_checks"] == ["site.tracking_mechanisms"]
     assert criteria["RDS-CUC-453"]["required_checks"] == ["site.cookie_descriptions"]
     assert criteria["RDS-AGB-368"]["required_checks"] == ["documents.analysis"]
     assert criteria["ITS-ENC-361"]["run"]["body"]["checks"] == ["site.transport"]

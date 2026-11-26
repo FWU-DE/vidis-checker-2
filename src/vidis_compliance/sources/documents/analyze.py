@@ -130,7 +130,8 @@ RULES: dict[str, EvidenceRule] = {
         pass_patterns=(
             r"(?:adaptives\s+lernsystem|adaptive\s+lernfunktion|lernstandsdiagnose|lernfortschritt).{0,220}(?:tracking|nutzerverhalten|analyse|profil)",
             r"(?:tracking|nutzerverhalten|analyse|profil).{0,220}(?:pädagogisch|paedagogisch|lernstandsdiagnose|lernfortschritt|adaptive\s+lernfunktion)",
-            r"(?:keine|kein)\s+(?:trackingmechanismen|tracking|analytics|werbe(?:tracking|profile?))",
+            # "kein Tracking eingesetzt", not "wenn Sie kein Tracking wünschen".
+            r"(?:keine|kein)\s+(?:trackingmechanismen|tracking|analytics|werbe(?:tracking|profile?))\b(?![^.]{0,60}(?:wünsch|wuensch|möcht|moecht|woll|wähl|waehl))",
         ),
         fail_patterns=(
             r"(?:werbe(?:tracking|profile?)|marketing\s+tracking|tracking\s+zu\s+werbezwecken|analytics).{0,220}(?:schüler|schueler|lernende|kinder)",
