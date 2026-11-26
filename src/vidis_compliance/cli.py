@@ -27,7 +27,7 @@ from .sources.site.vision import gemini_screenshot_provider, review_screenshots
 from .sources.site import crawl_cache
 
 # Site checks whose criteria a screenshot review can give evidence for.
-VISION_CHECKS = frozenset({"site.advertising", "site.outbound_ad_links", "site.youth_protection", "site.cookies"})
+VISION_CHECKS = frozenset({"site.advertising", "site.outbound_ad_links", "site.youth_protection"})
 from .sources.agentic import (
     DefaultAgenticRunner,
     normalize_agent_tasks,
@@ -334,14 +334,19 @@ def run_checks(
         raw_capture = _capture_to_dict(cap)
         cached_reviews = crawl_info.pop("vision_reviews", None)
         wants_vision = selected is None or bool(selected & VISION_CHECKS)
-        if wants_vision and cached_reviews is not None:
+        provider = gemini_screenshot_provider() if wants_vision else None
+        if provider is None:
+            raw_capture["vision_reviews"] = review_screenshots(raw_capture.get("screenshots") or [], provider=None)
+        elif cached_reviews is not None:
             raw_capture["vision_reviews"] = cached_reviews
         else:
-            provider = gemini_screenshot_provider() if wants_vision else None
-            raw_capture["vision_reviews"] = review_screenshots(raw_capture.get("screenshots") or [], provider=provider)
-            new_reviews = raw_capture["vision_reviews"] if provider is not None else None
-            if not crawl_info["cached"] or new_reviews is not None:
-                crawl_cache.store(cache_dir, url, pages, cap, new_reviews, created=crawl_info.get("created"))
+            # A parallel job may be reviewing the same crawl; wait and reuse its result.
+            with crawl_cache.key_lock("vision", cache_dir, url, pages):
+                reviews = crawl_cache.load_reviews(cache_dir, url, pages, crawl_info.get("created"))
+                if reviews is None:
+                    reviews = review_screenshots(raw_capture.get("screenshots") or [], provider=provider)
+                    crawl_cache.store(cache_dir, url, pages, cap, reviews, created=crawl_info.get("created"))
+            raw_capture["vision_reviews"] = reviews
         for model in sorted({str(r.get("model")) for r in raw_capture["vision_reviews"] if r.get("model")}):
             raw_capture = _append_ai_model_metadata(
                 raw_capture, f"vertex:{model}", task="Bewertung der Screenshots", status="vom Dienst genutzt"
