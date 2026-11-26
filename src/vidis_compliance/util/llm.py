@@ -127,11 +127,11 @@ def _access_token(config: LlmConfig) -> str:
         return str(credentials.token)
 
 
-def _endpoint(config: LlmConfig, model: str) -> str:
+def _endpoint(config: LlmConfig, model: str, method: str = "generateContent") -> str:
     host = "aiplatform.googleapis.com" if config.location == "global" else f"{config.location}-aiplatform.googleapis.com"
     return (
         f"https://{host}/v1/projects/{config.project}/locations/{config.location}"
-        f"/publishers/google/models/{model}:generateContent"
+        f"/publishers/google/models/{model}:{method}"
     )
 
 
@@ -177,11 +177,11 @@ def generate_json(
     return data
 
 
-def _post(config: LlmConfig, model: str, payload: dict[str, Any]) -> httpx.Response:
+def _post(config: LlmConfig, model: str, payload: dict[str, Any], method: str = "generateContent") -> httpx.Response:
     try:
         token = _access_token(config)
         return httpx.post(
-            _endpoint(config, model),
+            _endpoint(config, model, method),
             headers={"Authorization": f"Bearer {token}"},
             json=payload,
             timeout=TIMEOUT_SECONDS,
@@ -203,10 +203,12 @@ def last_probe() -> dict[str, Any] | None:
 
 
 def probe_models(force: bool = False) -> dict[str, Any] | None:
-    """Check with a tiny request which configured models answer.
+    """Check which configured models exist for this project, without cost.
 
-    Results are kept for ``PROBE_CACHE_SECONDS`` so a public status page cannot
-    run up model costs. Returns ``None`` when no model is configured.
+    Uses Vertex's free ``countTokens`` endpoint: it answers 200 when the model
+    is available to the project and 404 when it is not, and generates nothing.
+    Results are kept for ``PROBE_CACHE_SECONDS`` to spare the quota. Returns
+    ``None`` when no model is configured.
     """
     import time
     from datetime import datetime, timezone
@@ -219,15 +221,12 @@ def probe_models(force: bool = False) -> dict[str, Any] | None:
         limit = PROBE_MIN_INTERVAL_SECONDS if force else PROBE_CACHE_SECONDS
         if age is not None and age < limit and _PROBE.get("_models") == sorted(set(config.models.values())):
             return last_probe()
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": "Antworte nur mit: ok"}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": 32},
-        }
+        payload = {"contents": [{"role": "user", "parts": [{"text": "ok"}]}]}
         models: dict[str, Any] = {}
         for model in sorted(set(config.models.values())):
             started = time.monotonic()
             try:
-                response = _post(config, model, payload)
+                response = _post(config, model, payload, method="countTokens")
                 ok = response.status_code == 200
                 entry: dict[str, Any] = {"available": ok, "http_status": response.status_code}
             except LlmError as exc:
@@ -240,6 +239,7 @@ def probe_models(force: bool = False) -> dict[str, Any] | None:
             {
                 "checked_at": datetime.now(timezone.utc).isoformat(),
                 "cache_seconds": PROBE_CACHE_SECONDS,
+                "method": "countTokens (kostenlos, erzeugt nichts)",
                 "models": models,
                 "_checked": time.time(),
                 "_models": sorted(models),

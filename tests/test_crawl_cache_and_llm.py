@@ -140,7 +140,7 @@ def test_strong_model_falls_back_to_fast_when_missing(monkeypatch) -> None:
     used: list[str] = []
     body = {"candidates": [{"content": {"parts": [{"text": '{"status": "PASS", "note": "ok"}'}]}}]}
 
-    def fake_post(config, model, payload):
+    def fake_post(config, model, payload, method="generateContent"):
         used.append(model)
         if model == config.models["strong"]:
             return httpx.Response(404)
@@ -225,7 +225,9 @@ def _fake_vertex(monkeypatch, missing: set[str] | None = None) -> list[str]:
     monkeypatch.setenv("GOOGLE_SA_JSON", FAKE_SA)
     calls: list[str] = []
 
-    def fake_post(config, model, payload):
+    def fake_post(config, model, payload, method="generateContent"):
+        assert method == "countTokens", "status checks must not generate content"
+        assert "generationConfig" not in payload
         calls.append(model)
         return httpx.Response(404 if model in (missing or set()) else 200, json={})
 
