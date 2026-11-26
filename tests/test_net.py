@@ -155,12 +155,80 @@ def test_browser_guard_aborts_blocked_routes(no_private) -> None:
 
 
 def test_guard_is_installed_on_browser_contexts(no_private) -> None:
-    routes: list = []
+    calls: dict = {}
 
     class Context:
         def route(self, pattern, handler) -> None:
-            routes.append((pattern, handler))
+            calls["route"] = (pattern, handler)
 
-    net.guard_browser_context(Context())
+        def on(self, event, handler) -> None:
+            calls["on"] = (event, handler)
 
-    assert routes and routes[0][0] == "**/*" and isinstance(routes[0][1], net.BrowserGuard)
+        def route_web_socket(self, pattern, handler) -> None:
+            calls["ws"] = (pattern, handler)
+
+    guard = net.guard_browser_context(Context())
+
+    assert calls["route"] == ("**/*", guard)
+    assert calls["on"] == ("request", guard.observe)
+    assert calls["ws"] == ("**/*", guard.websocket)
+
+
+def _page(url: str, frames: list[str] | None = None):
+    frame_objs = [type("F", (), {"url": u})() for u in [url, *(frames or [])]]
+    return type("P", (), {"url": url, "frames": frame_objs})()
+
+
+def test_redirect_hop_to_internal_address_stops_the_crawl(no_private) -> None:
+    guard = net.BrowserGuard()
+    guard.observe(type("Req", (), {"url": "https://public.test/redir"})())
+    guard.assert_safe(_page("https://public.test/"))
+    guard.observe(type("Req", (), {"url": "http://internal.test/admin"})())
+
+    with pytest.raises(net.UnsafeTargetError, match="internal.test"):
+        guard.assert_safe(_page("https://public.test/"))
+
+
+def test_page_or_frame_on_internal_address_stops_the_crawl(no_private) -> None:
+    with pytest.raises(net.UnsafeTargetError):
+        net.BrowserGuard().assert_safe(_page("http://internal.test/"))
+    with pytest.raises(net.UnsafeTargetError):
+        net.BrowserGuard().assert_safe(_page("https://public.test/", frames=["http://meta.test/latest"]))
+    net.BrowserGuard().assert_safe(_page("https://public.test/", frames=["about:blank"]))
+
+
+def test_websockets_to_internal_addresses_are_closed(no_private) -> None:
+    class WsRoute:
+        def __init__(self, url: str) -> None:
+            self.url = url
+            self.result = ""
+
+        def connect_to_server(self) -> None:
+            self.result = "connected"
+
+        def close(self, code: int, reason: str) -> None:
+            self.result = f"closed {code}"
+
+    guard = net.BrowserGuard()
+    ok, bad = WsRoute("wss://public.test/live"), WsRoute("ws://internal.test/ws")
+    guard.websocket(ok)
+    guard.websocket(bad)
+
+    assert ok.result == "connected"
+    assert bad.result == "closed 1008"
+
+
+def test_guard_is_inert_when_private_targets_are_allowed(monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_ALLOW_PRIVATE_TARGETS", "1")
+    calls: list = []
+
+    class Context:
+        def route(self, *a) -> None:
+            calls.append("route")
+
+        def on(self, *a) -> None:
+            calls.append("on")
+
+    guard = net.guard_browser_context(Context())
+    guard.assert_safe(_page("http://10.0.0.1/"))
+    assert calls == []

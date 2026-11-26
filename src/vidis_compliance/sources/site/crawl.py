@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urldefrag, urljoin, urlparse, url
 
 from playwright.sync_api import BrowserContext, Page, ViewportSize, sync_playwright
 
-from ...net import guard_browser_context
+from ...net import BrowserGuard, guard_browser_context
 
 # Match the PDF screenshot appendix slot closely: wide enough for readable text,
 # tall enough to fill one A4 page without excessive downscaling or side margins.
@@ -412,6 +412,7 @@ def _capture_page(
     screenshot_dir: Path | None = None,
     screenshot_index: int | None = None,
     authenticated: bool = False,
+    guard: BrowserGuard | None = None,
 ) -> PageCapture:
     page.add_init_script(JS_BROWSER_SIGNAL_INSTALL)
     page.goto(url, wait_until="load", timeout=30000)
@@ -419,8 +420,12 @@ def _capture_page(
         page.wait_for_load_state("networkidle", timeout=5000)
     except Exception:
         pass
+    if guard is not None:
+        guard.assert_safe(page)
     if consent_hook is not None:
         consent_hook(page)
+    if guard is not None:
+        guard.assert_safe(page)
 
     cookies = context.cookies()
     local_storage = page.evaluate(JS_LOCAL)
@@ -436,6 +441,8 @@ def _capture_page(
         filename = f"{label}.png"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = screenshot_dir / filename
+        if guard is not None:
+            guard.assert_safe(page)
         page.screenshot(path=str(screenshot_path), full_page=False)
         viewport = getattr(page, "viewport_size", None) or SCREENSHOT_VIEWPORT
         screenshots.append(
@@ -504,7 +511,7 @@ def crawl(
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context(viewport=SCREENSHOT_VIEWPORT)
-        guard_browser_context(context)
+        guard = guard_browser_context(context)
         page = context.new_page()
         request_log: List[str] = []
         page.on("requestfinished", lambda req: request_log.append(req.url))
@@ -531,6 +538,7 @@ def crawl(
                     request_start=request_start,
                     screenshot_dir=screenshot_path,
                     screenshot_index=len(captures) + 1,
+                    guard=guard,
                 )
                 final_key = _canonical_page_url(capture.url)
                 if final_key != current_key and final_key in seen:

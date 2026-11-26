@@ -658,3 +658,14 @@ def test_redacted_data_redacts_credential_values_in_nested_agent_capture() -> No
     assert "secret" not in dumped
     assert "abc123" not in dumped
     assert dumped.count("***REDACTED***") >= 3
+
+
+def test_agentic_capture_keeps_no_session_values() -> None:
+    from vidis_compliance.sources import agentic
+
+    cookie = agentic._cookie_without_value({"name": "session", "value": "SESSIONVALUE", "domain": "app.test", "httpOnly": True})
+    storage = agentic._masked_values({"oidc.user:https://idp": '{"access_token":"abc"}'})
+
+    assert cookie == {"name": "session", "domain": "app.test", "httpOnly": True, "value_length": 12}
+    assert "abc" not in str(storage) and "oidc.user:https://idp" in storage
+    assert agentic._without_query("https://app.test/cb?code=XYZ&state=1#frag") == "https://app.test/cb"

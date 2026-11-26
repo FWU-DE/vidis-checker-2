@@ -11,9 +11,8 @@ services:
       VIDIS_JOB_WORKERS: ${VIDIS_JOB_WORKERS:-2}
       # Public base URL for links in job callbacks, e.g. https://vidis-checker.example
       VIDIS_PUBLIC_URL: ${VIDIS_PUBLIC_URL:-}
-      # Optional defaults for agentic runs; per-job credentials override them.
-      VIDIS_AGENT_USERNAME: ${VIDIS_AGENT_USERNAME:-}
-      VIDIS_AGENT_PASSWORD: ${VIDIS_AGENT_PASSWORD:-}
+      # Default Landesportal for agentic runs. Login credentials are never taken
+      # from the environment for API jobs; each job brings its own.
       VIDIS_AGENT_VIDIS_PORTAL: ${VIDIS_AGENT_VIDIS_PORTAL:-}
       # Optional: Gemini on Vertex AI for screenshot reviews. Without a key the
       # checks stay fully deterministic.

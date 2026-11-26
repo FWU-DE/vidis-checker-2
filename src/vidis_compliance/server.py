@@ -688,6 +688,7 @@ def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, d
         webinspector_export=request.webinspector_export,
         checks=list(request.checks) or None,
         crawl_max_age=request.crawl_max_age,
+        allow_env_credentials=False,
     )
     return run.result, run.raw_capture, run.code_capture, run.document_capture, run.agent_capture
 

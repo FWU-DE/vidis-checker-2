@@ -175,7 +175,7 @@ CHECKS: tuple[CheckDefinition, ...] = (
             "Ergänzt die Website-Prüfungen um Belege aus dem angemeldeten Bereich."
         ),
         source="agentic",
-        requires=("target_url", "agent_username + agent_password (or VIDIS_AGENT_* on the server)"),
+        requires=("target_url", "agent_username + agent_password for logged-in areas (API: always per job)"),
         criteria=(
             "RDS-CUC-371",
             "RDS-CUC-372",
