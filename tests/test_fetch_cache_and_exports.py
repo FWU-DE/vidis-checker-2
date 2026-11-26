@@ -117,3 +117,32 @@ def test_webinspector_exports_are_downloadable(tmp_path: Path, monkeypatch) -> N
     archive = zipfile.ZipFile(BytesIO(client.get(f"/jobs/{job_id}/archive.zip").content))
     assert "webinspector/network.json" in archive.namelist()
     assert "webinspector/other.json" not in archive.namelist()
+
+
+def _rds_cuc_453(run) -> list:
+    return [finding for finding in run.result.findings if finding.criterion == "RDS-CUC-453"]
+
+
+def test_documents_analysis_alone_leaves_rds_cuc_453_to_cookie_descriptions(
+    tmp_path: Path, transport: _Transport, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Callers merging single-check results per criterion must not get a MANUELL here
+    # that overwrites the result of site.cookie_descriptions.
+    monkeypatch.setattr(
+        cli, "discover_document_links", lambda url, wanted: {"found": {"agb": "https://docs.example/agb"}}
+    )
+    run = cli.run_checks(
+        job_id="docs", outdir=tmp_path / "docs", url="https://docs.example/", checks=["documents.analysis"]
+    )
+    assert _rds_cuc_453(run) == []
+    assert any(finding.criterion == "RDS-AGB-368" for finding in run.result.findings)
+
+
+def test_documents_analysis_without_url_still_names_the_missing_input(tmp_path: Path, transport: _Transport) -> None:
+    run = cli.run_checks(
+        job_id="docs", outdir=tmp_path / "docs", agb_url="https://docs.example/agb", checks=["documents.analysis"]
+    )
+    [finding] = _rds_cuc_453(run)
+    assert finding.status == "MANUELL"
+    assert finding.reason == "missing_input"
+    assert "fehlt eine Eingabe" in finding.note

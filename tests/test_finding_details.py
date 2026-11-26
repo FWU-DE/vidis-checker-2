@@ -98,13 +98,11 @@ def test_every_finding_of_a_full_run_has_a_reason(client: TestClient) -> None:
             assert not any(f["criterion"] in check.criteria for check in CHECKS if check.source in {"site", "documents", "code"})
 
 
-def test_criteria_without_their_check_say_what_is_missing(client: TestClient) -> None:
+def test_criteria_left_to_another_check_are_not_in_a_single_check_run(client: TestClient) -> None:
+    # A MANUELL here would overwrite site.cookie_descriptions for callers merging per criterion.
     job = _run(client, "/checks/documents.analysis", {"target_url": "https://app.example.test"})
 
-    cuc453 = next(f for f in job["result"]["findings"] if f["criterion"] == "RDS-CUC-453")
-    assert cuc453["reason"] == "missing_input"
-    assert "site.cookie_descriptions" in cuc453["note"]
-    assert cuc453["note"] != "Not yet implemented"
+    assert all(f["criterion"] != "RDS-CUC-453" for f in job["result"]["findings"])
 
 
 def test_site_criteria_without_a_url_are_missing_input(client: TestClient) -> None:
@@ -185,13 +183,6 @@ def test_required_checks_give_an_automatic_finding(client: TestClient) -> None:
 
     finding = next(f for f in job["result"]["findings"] if f["criterion"] == "RDS-CUC-374")
     assert finding["reason"] not in {"missing_input", "not_automated"}
-
-
-def test_placeholder_does_not_suggest_the_check_that_ran(client: TestClient) -> None:
-    job = _run(client, "/checks/documents.analysis", {"target_url": "https://app.example.test"})
-
-    cuc453 = next(f for f in job["result"]["findings"] if f["criterion"] == "RDS-CUC-453")
-    assert "site.cookie_descriptions" in cuc453["note"] and "documents.analysis" not in cuc453["note"]
 
 
 def test_manual_has_the_criteria_table() -> None:

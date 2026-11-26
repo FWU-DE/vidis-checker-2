@@ -385,7 +385,7 @@ uv run vidis serve --host 0.0.0.0 --port 8645</code></pre>
         </div>
       </div>
       <h3>Einzelne Prüfungen ausführen</h3>
-      <p>Ohne Auswahl laufen alle Prüfungen, die die Eingaben erlauben. Mit <code>checks</code> laufen nur die genannten Prüfungen, und das Ergebnis enthält nur deren Kriterien. Die IDs stehen in <code>GET /discovery</code> und <code>GET /checks</code>.</p>
+      <p>Ohne Auswahl laufen alle Prüfungen, die die Eingaben erlauben. Mit <code>checks</code> laufen nur die genannten Prüfungen, und das Ergebnis enthält nur deren Kriterien. Ein Kriterium, das eine gewählte Prüfung zwar abdeckt, in diesem Lauf aber eine andere Prüfung bewertet, fehlt im Ergebnis, statt als <code>MANUELL</code> zu erscheinen. So überschreibt etwa <code>documents.analysis</code> allein nicht das Ergebnis von <code>site.cookie_descriptions</code> für <code>RDS-CUC-453</code>, egal in welcher Reihenfolge beide laufen. Die IDs stehen in <code>GET /discovery</code> und <code>GET /checks</code>.</p>
       <pre><code>curl -X POST https://vidis-checker.example/jobs \
   -H "X-API-Key: $VIDIS_KEY" \
   -H 'Content-Type: application/json' \
@@ -521,7 +521,7 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
           <tr><td><code>automated</code></td><td>PASS oder FAIL wurde automatisch entschieden.</td></tr>
           <tr><td><code>needs_review</code></td><td>Die Prüfung lief, der Befund ist nicht eindeutig: ein Mensch entscheidet anhand von evidence, review_hint und artifacts.</td></tr>
           <tr><td><code>not_automated</code></td><td>Für das Kriterium gibt es keine automatische Prüfung; es ist immer manuell zu bewerten.</td></tr>
-          <tr><td><code>missing_input</code></td><td>Eine Eingabe fehlte (etwa Dokument-URL oder Login), oder die zuständige Prüfung war nicht ausgewählt; die Notiz nennt was.</td></tr>
+          <tr><td><code>missing_input</code></td><td>Eine Eingabe fehlte (etwa Dokument-URL oder Login); die Notiz nennt was.</td></tr>
           <tr><td><code>not_reachable</code></td><td>Eine Seite oder ein Dokument war nicht abrufbar.</td></tr>
         </tbody>
       </table>
@@ -562,7 +562,7 @@ curl -H "X-API-Key: $VIDIS_KEY" -o vidis-evidence.zip https://vidis-checker.exam
       </table>
       </div>
       <h3>Mögliche Ergebnisse je Prüfung</h3>
-      <p>Diese Tabelle steht maschinenlesbar in <code>/discovery</code> und <code>/checks</code> unter <code>outcomes</code> und <code>evidence_keys</code>. Zusätzlich kann jedes Kriterium <code>MANUELL</code> mit <code>missing_input</code> sein, wenn die zuständige Prüfung im Lauf fehlte (etwa <code>RDS-CUC-453</code> bei <code>documents.analysis</code> allein: dafür <code>site.cookie_descriptions</code> aufrufen), oder mit <code>not_reachable</code>, wenn eine Seite nicht abrufbar war.</p>
+      <p>Diese Tabelle steht maschinenlesbar in <code>/discovery</code> und <code>/checks</code> unter <code>outcomes</code> und <code>evidence_keys</code>. Zusätzlich kann jedes Kriterium <code>MANUELL</code> mit <code>missing_input</code> sein, wenn für die zuständige Prüfung eine Eingabe fehlte, oder mit <code>not_reachable</code>, wenn eine Seite nicht abrufbar war.</p>
       <div class="table-wrap">
       <table>
         <thead><tr><th>Prüfung</th><th>Status</th><th><code>reason</code></th><th>Wann</th><th><code>evidence</code></th></tr></thead>
