@@ -23,6 +23,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY src ./src
+COPY docs ./docs
 RUN uv sync --frozen --no-dev \
     && useradd --create-home --uid 1000 vidis \
     && mkdir -p /data/results /data/inputs \

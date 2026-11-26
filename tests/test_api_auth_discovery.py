@@ -359,3 +359,35 @@ def test_error_responses_also_declare_utf8(client: TestClient, monkeypatch) -> N
     assert unauthorized.status_code == 401 and unauthorized.headers["www-authenticate"] == "Bearer"
     assert missing.status_code == 404
     assert invalid.status_code == 422 and isinstance(invalid.json()["detail"], list)
+
+
+def test_manual_is_served_with_this_service_url(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("VIDIS_PUBLIC_URL", "https://vidis-checker.test")
+
+    redirect = client.get("/manual", follow_redirects=False)
+    page = client.get("/manual/")
+
+    assert redirect.status_code == 307 and redirect.headers["location"] == "/manual/"
+    assert page.status_code == 200
+    assert page.headers["content-type"] == "text/html; charset=utf-8"
+    assert "https://vidis-checker.test/discovery" in page.text
+    assert "vidis-checker.example" not in page.text
+    assert "Prüfungen" in page.text
+
+
+def test_manual_assets_and_only_listed_files(client: TestClient) -> None:
+    svg = client.get("/manual/assets/vidis-cli-run.svg")
+    matrix = client.get("/manual/results/coverage_matrix.html")
+
+    assert svg.status_code == 200 and svg.headers["content-type"].startswith("image/svg+xml")
+    assert matrix.status_code == 200
+    for path in ("/manual/../pyproject.toml", "/manual/..%2F..%2Fpyproject.toml", "/manual/manual.html", "/manual/assets/x.svg"):
+        assert client.get(path).status_code == 404, path
+
+
+def test_manual_needs_no_key(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("VIDIS_AUTH_DISABLED")
+    monkeypatch.setenv("VIDIS_API_KEYS", "k")
+
+    assert client.get("/manual/").status_code == 200
+    assert client.get("/discovery").json()["links"]["manual"].endswith("/manual/")

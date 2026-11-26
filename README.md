@@ -39,6 +39,7 @@ Cookie and storage classification
 API automation
 - `VIDIS_API_KEYS=key1,key2 uv run vidis serve --host 0.0.0.0 --port 8645` starts the API. Without keys, `vidis serve` only runs on 127.0.0.1 and is open there.
 - Every `/jobs` endpoint requires `Authorization: Bearer <key>` or `X-API-Key: <key>`. Without configured keys the job endpoints answer 503 unless `VIDIS_AUTH_DISABLED=1`.
+- `GET /manual/` serves this manual (with the service's own URL in the examples); `/docs` is the API reference.
 - `GET /discovery` (also `/.well-known/vidis-checks`) is public and lists every available check with its criteria and required inputs, plus endpoints and auth schemes. `/health`, `/criteria`, `/docs` and `/openapi.json` are public too.
 - `POST /jobs` starts an async check with the same checks as `vidis check` and returns a status URL.
 - `"checks": ["site.cookies", "site.transport"]` in `POST /jobs` runs only those checks; `POST /checks/<check_id>` starts a job for exactly one check (same body without `checks`). `GET /checks` lists the ids. Results then only hold the selected checks' criteria.

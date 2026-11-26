@@ -4,5 +4,8 @@
 results
 tmp
 tests
-docs
+docs/*
+!docs/manual.html
+!docs/assets
+!docs/results
 *.egg-info
