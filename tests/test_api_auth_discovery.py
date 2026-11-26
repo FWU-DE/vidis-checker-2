@@ -391,3 +391,44 @@ def test_manual_needs_no_key(client: TestClient, monkeypatch) -> None:
 
     assert client.get("/manual/").status_code == 200
     assert client.get("/discovery").json()["links"]["manual"].endswith("/manual/")
+
+
+def test_api_never_uses_the_servers_agent_credentials(client: TestClient, monkeypatch) -> None:
+    seen: dict = {}
+
+    class FakeRunner:
+        def run(self, **kwargs):
+            seen.update(kwargs)
+            return AgenticCrawlResult(base_url=kwargs["base_url"], task_types=kwargs["task_types"], persona=kwargs["persona"])
+
+    _fake_site(monkeypatch)
+    monkeypatch.setattr(server.cli_module, "DefaultAgenticRunner", lambda: FakeRunner())
+    monkeypatch.setenv("VIDIS_AGENT_USERNAME", "operator")
+    monkeypatch.setenv("VIDIS_AGENT_PASSWORD", "operator-secret")
+
+    job_id = client.post(
+        "/checks/agentic.persona_crawl", json={"target_url": "https://attacker.example.test/login", "agent_username": "partner"}
+    ).json()["id"]
+    completed = _wait(client, job_id)
+
+    assert completed["status"] == "completed", completed.get("error")
+    assert seen["username"] == "partner"
+    assert seen["password"] is None
+
+
+def test_cli_still_uses_the_environment_credentials(tmp_path: Path, monkeypatch) -> None:
+    seen: dict = {}
+
+    class FakeRunner:
+        def run(self, **kwargs):
+            seen.update(kwargs)
+            return AgenticCrawlResult(base_url=kwargs["base_url"], task_types=kwargs["task_types"], persona=kwargs["persona"])
+
+    _fake_site(monkeypatch)
+    monkeypatch.setattr(server.cli_module, "DefaultAgenticRunner", lambda: FakeRunner())
+    monkeypatch.setenv("VIDIS_AGENT_USERNAME", "operator")
+    monkeypatch.setenv("VIDIS_AGENT_PASSWORD", "operator-secret")
+
+    server.cli_module.run_checks(job_id="cli", outdir=tmp_path / "cli", url="https://app.example.test", agentic=True, checks=["agentic.persona_crawl"])
+
+    assert seen["username"] == "operator" and seen["password"] == "operator-secret"

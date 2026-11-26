@@ -8,7 +8,7 @@ deterministic):
 - ``GOOGLE_CLOUD_PROJECT``: defaults to ``project_id`` from the key
 - ``GOOGLE_CLOUD_LOCATION``: defaults to ``global``
 - ``VIDIS_LLM_MODEL_FAST``: quick, cheap model (default ``gemini-3.8-flash``)
-- ``VIDIS_LLM_MODEL_STRONG``: model for judgement tasks (default ``gemini-3.1-pro-preview``)
+- ``VIDIS_LLM_MODEL_STRONG``: model for judgement tasks (default ``gemini-4-hydrogen``)
 - ``VIDIS_LLM_DISABLED=1`` switches the model off even with credentials
 
 Each task names a tier in ``TASK_TIERS``; if the strong model is unavailable
@@ -27,7 +27,7 @@ from typing import Any
 
 import httpx
 
-DEFAULT_MODELS = {"fast": "gemini-3.8-flash", "strong": "gemini-3.1-pro-preview"}
+DEFAULT_MODELS = {"fast": "gemini-3.8-flash", "strong": "gemini-4-hydrogen"}
 # Which tier each task uses: judging screenshots needs the stronger model.
 TASK_TIERS = {"screenshot_review": "strong", "default": "fast"}
 SCOPE = "https://www.googleapis.com/auth/cloud-platform"

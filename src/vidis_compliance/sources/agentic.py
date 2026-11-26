@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Sequence
-from urllib.parse import urldefrag, urljoin, urlparse
+from urllib.parse import urldefrag, urljoin, urlparse, urlsplit, urlunsplit
 from ..net import guard_browser_context
 
 AgentTask = Literal["legal", "student", "teacher", "register", "logout"]
@@ -63,9 +63,9 @@ class DefaultAgenticRunner:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
-            guard_browser_context(context)
+            self._guard = guard_browser_context(context)
             page = context.new_page()
-            page.on("request", lambda request: result.requests.append({"method": request.method, "url": request.url}))
+            page.on("request", lambda request: result.requests.append({"method": request.method, "url": _without_query(request.url)}))
             try:
                 self._goto(page, base_url, result, "open")
                 if username or password:
@@ -86,9 +86,11 @@ class DefaultAgenticRunner:
                     result.actions.append({"action": "visit", "url": str(page.url)})
                     result.steps.append({"action": "visit", "url": str(page.url), "note": "no click paths found"})
                     self._capture_current_step_artifact(page, output_dir, result, result.steps[-1], target_pages=target_pages)
-                result.cookies = context.cookies()
-                result.local_storage = _safe_eval_dict(page, "() => Object.fromEntries(Object.entries(localStorage))")
-                result.session_storage = _safe_eval_dict(page, "() => Object.fromEntries(Object.entries(sessionStorage))")
+                self._assert_safe(page)
+                # Names and attributes are evidence; values are session secrets of the test account.
+                result.cookies = [_cookie_without_value(cookie) for cookie in context.cookies()]
+                result.local_storage = _masked_values(_safe_eval_dict(page, "() => Object.fromEntries(Object.entries(localStorage))"))
+                result.session_storage = _masked_values(_safe_eval_dict(page, "() => Object.fromEntries(Object.entries(sessionStorage))"))
             finally:
                 context.close()
                 browser.close()
@@ -99,6 +101,7 @@ class DefaultAgenticRunner:
             page.goto(url, wait_until="networkidle", timeout=20_000)
         except Exception:
             page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+        self._assert_safe(page)
         current_url = str(page.url)
         result.visited_urls.append(current_url)
         result.actions.append({"action": action, "url": current_url})
@@ -112,6 +115,7 @@ class DefaultAgenticRunner:
         slug = self._slug(label)[:40] or "page"
         screenshot_rel = f"screenshots/{index:02d}-{slug}.png"
         pdf_rel = f"pdfs/{index:02d}-{slug}.pdf"
+        self._assert_safe(page)
         page.screenshot(path=str(output_dir / screenshot_rel), full_page=True)
         try:
             page.pdf(path=str(output_dir / pdf_rel), print_background=True)
@@ -120,6 +124,11 @@ class DefaultAgenticRunner:
         result.artifacts.setdefault("screenshots", []).append(screenshot_rel)
         if pdf_rel:
             result.artifacts.setdefault("pdfs", []).append(pdf_rel)
+
+    def _assert_safe(self, page: Any) -> None:
+        guard = getattr(self, "_guard", None)
+        if guard is not None:
+            guard.assert_safe(page)
 
     def _navigation_instructions(self, task_types: list[str], instructions: list[str] | None) -> list[str]:
         result: list[str] = []
@@ -150,6 +159,8 @@ class DefaultAgenticRunner:
         result.steps.append({"action": "login", "username": username, "password": password})
         if vidis_portal:
             self._select_vidis_portal(page, vidis_portal, result, vidis_login_label=vidis_login_label)
+        # Never type credentials into a page the browser was led to on an internal address.
+        self._assert_safe(page)
         filled = False
         for selector in ["input[name='username']", "input[name='email']", "input[type='email']", "input[type='text']"]:
             try:
@@ -509,6 +520,22 @@ class DefaultAgenticRunner:
         result.visited_urls.append(current_url)
         result.actions.append({"task": task_type, "action": "visit", "url": current_url})
         result.steps.append({"task": task_type, "action": "visit", "url": current_url})
+
+
+def _without_query(url: str) -> str:
+    """Drop query and fragment: SSO redirects carry codes and tokens there."""
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
+def _cookie_without_value(cookie: dict[str, Any]) -> dict[str, Any]:
+    kept = {key: value for key, value in cookie.items() if key != "value"}
+    kept["value_length"] = len(str(cookie.get("value") or ""))
+    return kept
+
+
+def _masked_values(storage: dict[str, Any]) -> dict[str, str]:
+    return {str(key): f"<{len(str(value))} Zeichen, Wert nicht gespeichert>" for key, value in storage.items()}
 
 
 def _safe_eval_dict(page: Any, expression: str) -> dict[str, Any]:

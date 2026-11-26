@@ -284,6 +284,7 @@ def run_checks(
     checks: list[str] | None = None,
     crawl_max_age: int = crawl_cache.DEFAULT_MAX_AGE_SECONDS,
     cache_root: Path | None = None,
+    allow_env_credentials: bool = True,
 ) -> CheckRun:
     """Run every VIDIS check that the supplied inputs allow, or only ``checks``.
 
@@ -456,8 +457,12 @@ def run_checks(
         if not url:
             raise ValueError("--agentic requires --url")
         task_types = normalize_agent_tasks(agent_tasks)
-        username = resolve_secret(agent_username, "VIDIS_AGENT_USERNAME")
-        password = resolve_secret(agent_password, "VIDIS_AGENT_PASSWORD")
+        if allow_env_credentials:
+            username = resolve_secret(agent_username, "VIDIS_AGENT_USERNAME")
+            password = resolve_secret(agent_password, "VIDIS_AGENT_PASSWORD")
+        else:
+            # API callers choose the target site, so the operator's stored login must never be typed into it.
+            username, password = agent_username, agent_password
         agent_result = DefaultAgenticRunner().run(
             base_url=url,
             task_types=task_types,

@@ -138,14 +138,31 @@ def safe_get(
 
 
 class BrowserGuard:
-    """Playwright route handler that lets only public http(s) requests through."""
+    """Keeps a browser context on public addresses.
 
-    def __init__(self) -> None:
+    Two layers, because Playwright's request routing only sees the first URL
+    of a redirect chain:
+
+    - the route handler aborts direct requests to non-public addresses;
+    - every request event, including each redirect hop, is checked and
+      recorded, and ``assert_safe`` raises before anything is read from or
+      captured on a page once any request went to a non-public address.
+
+    The request to a redirect target has then already been sent (a blind
+    GET); its response is never read, captured or shown. Only a network-level
+    egress filter can stop the request itself.
+    """
+
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
         self._decisions: dict[str, bool] = {}
         self._lock = threading.Lock()
         self.blocked: list[str] = []
+        self.violations: list[str] = []
 
     def allowed(self, url: str) -> bool:
+        if not self.enabled:
+            return True
         parts = urlsplit(url)
         if parts.scheme in {"data", "blob", "about"}:
             return True
@@ -173,10 +190,46 @@ class BrowserGuard:
             self.blocked.append(url[:300])
         route.abort("blockedbyclient")
 
+    def observe(self, request) -> None:
+        """Request event handler; also fires for every redirect hop."""
+        url = request.url
+        if not self.allowed(url) and len(self.violations) < 50:
+            self.violations.append(url[:300])
+
+    def websocket(self, ws_route) -> None:
+        if self.allowed(ws_route.url):
+            ws_route.connect_to_server()
+            return
+        if len(self.blocked) < 50:
+            self.blocked.append(ws_route.url[:300])
+        ws_route.close(code=1008, reason="blocked")
+
+    def assert_safe(self, page=None) -> None:
+        """Raise ``UnsafeTargetError`` if the browser reached a non-public address."""
+        if not self.enabled:
+            return
+        urls = []
+        if page is not None:
+            urls.append(str(page.url))
+            try:
+                urls.extend(str(frame.url) for frame in page.frames)
+            except Exception:
+                pass
+        for url in urls:
+            if url and not self.allowed(url) and url not in self.violations:
+                self.violations.append(url[:300])
+        if self.violations:
+            host = urlsplit(self.violations[0]).hostname or self.violations[0]
+            raise UnsafeTargetError(f"crawl stopped: the site led the browser to a non-public address ({host})")
+
 
 def guard_browser_context(context) -> BrowserGuard:
-    """Block requests from ``context`` to non-public addresses; returns the guard."""
-    guard = BrowserGuard()
-    if not private_targets_allowed():
+    """Keep ``context`` on public addresses; call ``assert_safe(page)`` before reading a page."""
+    guard = BrowserGuard(enabled=not private_targets_allowed())
+    if guard.enabled:
         context.route("**/*", guard)
+        context.on("request", guard.observe)
+        route_web_socket = getattr(context, "route_web_socket", None)
+        if route_web_socket is not None:
+            route_web_socket("**/*", guard.websocket)
     return guard
