@@ -139,3 +139,49 @@ def test_rds_cuc_377_manual_report_contains_full_criterion_and_questions(tmp_pat
     assert "Richtet sich das Angebot an Lehrkräfte" in text
     assert "Welche pädagogische Notwendigkeit" in text
     assert "| Fingerprinting-/Entropy-APIs | canvas.toDataURL (2×) |" in text
+
+
+def _rule_377_status(text: str, tmp_path: Path) -> str:
+    document = tmp_path / "datenschutz.txt"
+    document.write_text(text, encoding="utf-8")
+    findings, _capture = analyze_documents([document])
+    return next(f for f in findings if f.criterion == "RDS-CUC-377").status
+
+
+def test_rds_cuc_377_opt_out_wording_is_no_evidence(tmp_path: Path) -> None:
+    # fwu.de, social-media section: says nothing about tracking on the site itself.
+    opt_out = "Wenn Sie kein Tracking wünschen, dann loggen Sie sich aus, oder folgen der Anleitung der Plattform."
+    assert _rule_377_status(opt_out, tmp_path) == "MANUELL"
+    assert _rule_377_status("Auf dieser Website findet kein Tracking statt.", tmp_path) == "PASS"
+
+
+def _single_check_run(tmp_path: Path, monkeypatch, checks: list[str]):
+    from vidis_compliance import cli
+    from vidis_compliance.sources.documents import analyze
+    from vidis_compliance.sources.site.crawl import PageCapture
+
+    monkeypatch.setattr(
+        cli,
+        "crawl",
+        lambda url, pages=5, headless=True, screenshot_dir=None: PageCapture(
+            url=url, cookies=[{"name": "_ga", "domain": "app.example.test"}], local_storage={}, session_storage={}, requests=[], scripts=[], visited_urls=[url]
+        ),
+    )
+    monkeypatch.setattr(
+        cli, "discover_document_links", lambda url, wanted=(), **k: {"found": {"privacy": url + "datenschutz"}, "missing": [], "searched": [url], "errors": []}
+    )
+    purpose = "Adaptives Lernsystem: das Nutzerverhalten wird nur zur Lernstandsdiagnose und für den Lernfortschritt analysiert."
+    monkeypatch.setattr(analyze, "fetch_document", lambda d: (purpose.encode(), "text/plain", d.location, d.kind))
+    run = cli.run_checks(job_id="j", outdir=tmp_path / "out", url="https://app.example.test/", checks=checks)
+    return [f for f in run.result.findings if f.criterion == "RDS-CUC-377"]
+
+
+def test_rds_cuc_377_site_check_alone_reads_the_purpose_from_the_documents(tmp_path: Path, monkeypatch) -> None:
+    [finding] = _single_check_run(tmp_path, monkeypatch, ["site.tracking_mechanisms"])
+    assert finding.status == "PASS"
+    assert "Lernstandsdiagnose" in finding.note
+
+
+def test_rds_cuc_377_documents_alone_leave_it_to_the_site_check(tmp_path: Path, monkeypatch) -> None:
+    # A second answer from documents.analysis would overwrite the site check for callers merging per criterion.
+    assert _single_check_run(tmp_path, monkeypatch, ["documents.analysis"]) == []

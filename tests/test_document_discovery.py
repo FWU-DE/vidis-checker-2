@@ -93,7 +93,9 @@ def test_document_check_needs_only_the_site(client: TestClient, monkeypatch, tmp
     assert job["status"] == "completed", job.get("error")
     assert set(fetched) == {"https://anbieter.test/agb", "https://anbieter.test/datenschutz", "https://anbieter.test/vertrag/auftragsverarbeitung"}
     codes = {finding["criterion"] for finding in job["result"]["findings"]}
-    assert set(analyze.DOCUMENT_CRITERIA) <= codes
+    # RDS-CUC-377 is decided by site.tracking_mechanisms when a URL is given.
+    assert set(analyze.DOCUMENT_CRITERIA) - {"RDS-CUC-377"} <= codes
+    assert "RDS-CUC-377" not in codes
     capture = client.get(f"/jobs/{job['id']}/artifacts/document_capture.json").json()
     assert capture["discovery"]["found"]["agb"] == "https://anbieter.test/agb"
     assert capture["skipped"] == [{"location": "https://anbieter.test/vertrag/auftragsverarbeitung", "kind": "avv", "error": "HTTPStatusError"}]

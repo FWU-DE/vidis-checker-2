@@ -85,7 +85,7 @@ CHECKS: tuple[CheckDefinition, ...] = (
     CheckDefinition(
         id="site.tracking_mechanisms",
         name="Trackingmechanismen",
-        description="Fasst Tracker-Signale zusammen; mit Produktdokumenten auch den pädagogischen Zweck.",
+        description="Fasst Tracker-Signale zusammen und sucht in AGB und Datenschutzerklärung einen pädagogischen Zweck.",
         source="site",
         requires=_SITE,
         criteria=("RDS-CUC-377",),
@@ -397,9 +397,9 @@ def outcomes_for(check_id: str) -> list[dict[str, str]]:
     return [{"status": status, "reason": reason, "when": when} for status, reason, when in OUTCOMES.get(check_id, ())]
 
 
-# site.cookie_descriptions looks up the privacy policy itself, so this criterion
-# does not need documents.analysis on top.
-_DOCUMENTS_NOT_NEEDED = {"RDS-CUC-453"}
+# The site check for these criteria reads the privacy policy (and AGB) itself and
+# decides; documents.analysis on top would give a second, possibly different answer.
+SITE_DECIDES_WITH_DOCUMENTS = {"RDS-CUC-453": "site.cookie_descriptions", "RDS-CUC-377": "site.tracking_mechanisms"}
 
 
 def checks_needed_for(code: str) -> dict[str, object]:
@@ -411,7 +411,7 @@ def checks_needed_for(code: str) -> dict[str, object]:
     covering = [check for check in CHECKS if code in check.criteria]
     site = [check.id for check in covering if check.source == "site"]
     documents = [check.id for check in covering if check.source == "documents"]
-    required = site + ([] if site and code in _DOCUMENTS_NOT_NEEDED else documents)
+    required = site + ([] if site and code in SITE_DECIDES_WITH_DOCUMENTS else documents)
     optional = [
         {"check": check.id, "needs": list(check.requires)}
         for check in covering

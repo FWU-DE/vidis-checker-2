@@ -41,7 +41,7 @@ from .sources.documents.analyze import DOCUMENT_CRITERIA, DocumentInput, analyze
 from .evidence import run_lighthouse, write_webinspector_exports
 from .coverage_matrix import write_coverage_matrix
 from . import finding_details
-from .catalog import CRAWL_FREE_SITE_CHECKS, criteria_for_checks, resolve_check_selection
+from .catalog import CRAWL_FREE_SITE_CHECKS, SITE_DECIDES_WITH_DOCUMENTS, criteria_for_checks, resolve_check_selection
 from .report.markdown import generate_markdown
 from .report.pdf import generate_pdf
 import yaml
@@ -350,11 +350,17 @@ def _run_checks(
     agent_capture = None
     document_inputs = build_document_inputs(documents or [], agb_url=agb_url, privacy_url=privacy_url, avv_url=avv_url)
     document_discovery = None
-    if url and (want("documents.analysis") or want("site.cookie_descriptions")):
+    if url and (want("documents.analysis") or want("site.cookie_descriptions") or want("site.tracking_mechanisms")):
         # Callers test along the criteria with just the site; find what they did not supply.
-        # The cookie-description check only needs the privacy policy.
+        # The cookie-description check only needs the privacy policy; the tracking check
+        # looks for a pedagogical purpose in the privacy policy and the AGB.
         supplied = {document.kind for document in document_inputs}
-        kinds = DOCUMENT_KINDS if want("documents.analysis") else ("privacy",)
+        if want("documents.analysis"):
+            kinds = DOCUMENT_KINDS
+        elif want("site.tracking_mechanisms"):
+            kinds = tuple(kind for kind in DOCUMENT_KINDS if kind in {"agb", "privacy"})
+        else:
+            kinds = ("privacy",)
         wanted = tuple(kind for kind in kinds if kind not in supplied)
         if wanted:
             document_discovery = discover_document_links(url, wanted=wanted)
@@ -422,6 +428,11 @@ def _run_checks(
         s376, n376 = classify_browser_fingerprinting(page_signals, audience)
         if want("site.fingerprinting"):
             findings.append(CheckFinding(criterion="RDS-CUC-376", status=s376, note=n376))
+        if want("site.tracking_mechanisms") and document_inputs and not want("documents.analysis"):
+            # Run alone, the check still needs the documents' purpose statements, like in a full run.
+            _document_findings, purpose_capture = analyze_documents(document_inputs)
+            page_signals["document_capture"] = purpose_capture
+            raw_capture["document_capture"] = purpose_capture
         s377, n377 = classify_tracking_mechanisms(page_signals, audience)
         if want("site.tracking_mechanisms"):
             findings.append(CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377))
@@ -495,6 +506,10 @@ def _run_checks(
     if document_inputs and want("documents.analysis"):
         document_findings, document_capture = analyze_documents(document_inputs)
         finding_details.tag(document_findings, "documents.analysis")
+        if selected is not None and url:
+            # With a URL the site check decides these; a second answer from the documents would
+            # overwrite it for callers that merge single-check results per criterion.
+            document_findings = [f for f in document_findings if f.criterion not in SITE_DECIDES_WITH_DOCUMENTS]
         if document_discovery is not None:
             document_capture["discovery"] = document_discovery
         by_criterion = {finding.criterion: finding for finding in findings}
@@ -517,9 +532,11 @@ def _run_checks(
                 privacy_text=privacy_text_for_cookies,
             )
             raw_capture["rds_cuc_453"] = e453
-            by_criterion["RDS-CUC-453"] = CheckFinding(criterion="RDS-CUC-453", status=s453, note=n453)
-            s377, n377 = classify_tracking_mechanisms(page_signals, audience)
-            by_criterion["RDS-CUC-377"] = CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377)
+            if want("site.cookie_descriptions"):
+                by_criterion["RDS-CUC-453"] = CheckFinding(criterion="RDS-CUC-453", status=s453, note=n453)
+            if want("site.tracking_mechanisms"):
+                s377, n377 = classify_tracking_mechanisms(page_signals, audience)
+                by_criterion["RDS-CUC-377"] = CheckFinding(criterion="RDS-CUC-377", status=s377, note=n377)
         findings = list(by_criterion.values())
     if agentic:
         if not url:
