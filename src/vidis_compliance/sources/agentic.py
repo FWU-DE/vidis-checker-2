@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Sequence
 from urllib.parse import urldefrag, urljoin, urlparse
+from ..net import guard_browser_context
 
 AgentTask = Literal["legal", "student", "teacher", "register", "logout"]
 DEFAULT_AGENT_TASKS: list[AgentTask] = ["legal", "student", "teacher", "register", "logout"]
@@ -62,6 +63,7 @@ class DefaultAgenticRunner:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
+            guard_browser_context(context)
             page = context.new_page()
             page.on("request", lambda request: result.requests.append({"method": request.method, "url": request.url}))
             try:

@@ -10,6 +10,8 @@ from urllib.parse import parse_qsl, urlencode, urldefrag, urljoin, urlparse, url
 
 from playwright.sync_api import BrowserContext, Page, ViewportSize, sync_playwright
 
+from ...net import guard_browser_context
+
 # Match the PDF screenshot appendix slot closely: wide enough for readable text,
 # tall enough to fill one A4 page without excessive downscaling or side margins.
 SCREENSHOT_VIEWPORT = ViewportSize(width=1900, height=2100)
@@ -502,6 +504,7 @@ def crawl(
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context(viewport=SCREENSHOT_VIEWPORT)
+        guard_browser_context(context)
         page = context.new_page()
         request_log: List[str] = []
         page.on("requestfinished", lambda req: request_log.append(req.url))

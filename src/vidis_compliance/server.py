@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import hmac
-import ipaddress
 import json
 import os
-import socket
 import threading
 import uuid
 import zipfile
@@ -24,7 +22,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
-from . import callbacks
+from . import callbacks, net
 from . import cli as cli_module
 from .catalog import CHECK_IDS, CHECKS, checks_for_criterion, get_check, resolve_check_selection, runtime_availability
 from .cli import load_criteria
@@ -659,19 +657,11 @@ def _public_base_url(request: Request) -> str:
 
 def _require_callback_target(url: str) -> None:
     """Callbacks go only to public HTTPS hosts that resolve right now."""
-    if _env_flag("VIDIS_ALLOW_PRIVATE_TARGETS"):
+    if net.private_targets_allowed():
         return
-    parts = urlsplit(url)
-    if parts.scheme != "https":
+    if urlsplit(url).scheme != "https":
         raise ValueError("callback_url must use https")
-    host = parts.hostname or ""
-    try:
-        infos = socket.getaddrinfo(host, parts.port or 443)
-    except (socket.gaierror, UnicodeError) as exc:
-        raise ValueError(f"callback host does not resolve: {host}") from exc
-    _require_public_target(url)
-    if not infos:
-        raise ValueError(f"callback host does not resolve: {host}")
+    net.check_public_url(url, strict=True)
 
 
 def _execute_check(job_id: str, request: JobCreateRequest) -> tuple[JobResult, dict | None, dict | None, dict | None, dict | None]:
@@ -737,20 +727,12 @@ def _require_allowed_local_path(value: str) -> None:
 
 
 def _require_public_target(url: str) -> None:
-    """Refuse URLs that point into the server's own network unless explicitly allowed."""
-    if _env_flag("VIDIS_ALLOW_PRIVATE_TARGETS"):
-        return
-    host = urlsplit(url).hostname or ""
-    if host.lower() in {"localhost", "localhost.localdomain"} or host.lower().endswith(".localhost"):
-        raise ValueError(f"target host is not public: {host}")
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except (socket.gaierror, UnicodeError):
-        return  # unresolvable here; the crawl will report it
-    for info in infos:
-        address = ipaddress.ip_address(info[4][0].split("%", 1)[0])
-        if not address.is_global:
-            raise ValueError(f"target host resolves to a non-public address: {host}")
+    """Refuse URLs that point into the server's own network unless explicitly allowed.
+
+    An unresolvable host passes here; the crawl reports it. Every fetch checks
+    again, including each redirect (see ``net``).
+    """
+    net.check_public_url(url, strict=False)
 
 
 def _job_dir(job_id: str) -> Path:
